@@ -99,7 +99,7 @@
 			</div>
 
 			<form
-				action="?/createHomework"
+				action="?/createHomework&tab=hausuebungen"
 				method="POST"
 				use:enhance={() => async ({ result, update }) => {
 					await update();

@@ -157,7 +157,7 @@
 						<!-- Manual Final Grade Input (Teacher sets final grade) -->
 						<td class="py-3 px-4 text-center">
 							<form
-								action="?/saveFinalGrade"
+								action="?/saveFinalGrade&tab=noten"
 								method="POST"
 								use:enhance={() => {
 									return async ({ update }) => {

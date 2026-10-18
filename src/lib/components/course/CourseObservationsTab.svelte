@@ -104,7 +104,7 @@
 							<!-- Points Input -->
 							<td class="py-3 px-4 text-center">
 								<form
-									action="?/saveObservationScore"
+									action="?/saveObservationScore&tab=beobachtungen"
 									method="POST"
 									use:enhance={() => {
 										return async ({ update }) => {
@@ -152,11 +152,25 @@
 			</div>
 
 			<form
-				action="?/createObservation"
+				action="?/createObservation&tab=beobachtungen"
 				method="POST"
 				use:enhance={() => async ({ result, update }) => {
+					if (result.type === 'success' && result.data) {
+						showCreateModal = false;
+						const createdId = (result.data as any).createdObservationId;
+						if (createdId) {
+							activeObsId = String(createdId);
+						}
+						title = '';
+						description = '';
+					}
 					await update();
-					if (result.type === 'success') showCreateModal = false;
+					if (result.type === 'success' && result.data) {
+						const createdId = (result.data as any).createdObservationId;
+						if (createdId) {
+							activeObsId = String(createdId);
+						}
+					}
 				}}
 				class="space-y-4"
 			>

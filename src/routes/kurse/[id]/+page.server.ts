@@ -268,7 +268,7 @@ export const actions: Actions = {
 			return fail(400, { success: false, message: 'Titel, Datum und gültige Max-Punkte (> 0) erforderlich' });
 		}
 
-		observationRepository.create({
+		const id = observationRepository.create({
 			courseId: params.id,
 			title,
 			date,
@@ -276,7 +276,7 @@ export const actions: Actions = {
 			description
 		});
 
-		return { success: true };
+		return { success: true, createdObservationId: id };
 	},
 
 	saveObservationScore: async ({ request }) => {

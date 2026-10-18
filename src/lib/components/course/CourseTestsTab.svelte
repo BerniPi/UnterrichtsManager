@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { goto } from '$app/navigation';
 	import GradingScaleEditor from '$lib/components/assessments/GradingScaleEditor.svelte';
 	import ClassStatsChart from '$lib/components/assessments/ClassStatsChart.svelte';
 	import {
@@ -249,7 +250,7 @@
 			<!-- Grading Scale Editor Modal/Drawer (if open) -->
 			{#if showScaleModal}
 				<form
-					action="?/updateGradingScale"
+					action="?/updateGradingScale&tab=tests"
 					method="POST"
 					use:enhance={() => {
 						return async ({ result, update }) => {
@@ -317,7 +318,7 @@
 									<!-- Points Input with instant reactive calculation -->
 									<td class="py-3 px-4 text-center">
 										<form
-											action="?/saveAssessmentScore"
+											action="?/saveAssessmentScore&tab=tests"
 											method="POST"
 											use:enhance={() => {
 												return async ({ update }) => {
@@ -374,7 +375,7 @@
 									<!-- Absent Toggle -->
 									<td class="py-3 px-3 text-center">
 										<form
-											action="?/saveAssessmentScore"
+											action="?/saveAssessmentScore&tab=tests"
 											method="POST"
 											use:enhance
 										>
@@ -395,7 +396,7 @@
 									<!-- Made up Toggle -->
 									<td class="py-3 px-3 text-center">
 										<form
-											action="?/saveAssessmentScore"
+											action="?/saveAssessmentScore&tab=tests"
 											method="POST"
 											use:enhance
 										>
@@ -462,7 +463,7 @@
 
 									<td class="py-3 px-4 text-center">
 										<form
-											action="?/markTestReturnSigned"
+											action="?/markTestReturnSigned&tab=tests"
 											method="POST"
 											use:enhance={() => {
 												return async ({ update }) => {
@@ -504,11 +505,18 @@
 			</div>
 
 			<form
-				action="?/createAssessment"
+				action="?/createAssessment&tab=tests"
 				method="POST"
 				use:enhance={() => async ({ result, update }) => {
+					if (result.type === 'success' && result.data) {
+						showCreateModal = false;
+						const createdId = (result.data as any).createdAssessmentId;
+						if (createdId) {
+							await goto(`/kurse/${course.id}?tab=tests&assessmentId=${createdId}`, { invalidateAll: true });
+							return;
+						}
+					}
 					await update();
-					if (result.type === 'success') showCreateModal = false;
 				}}
 				class="space-y-4"
 			>

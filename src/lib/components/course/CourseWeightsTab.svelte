@@ -63,7 +63,7 @@
 	</div>
 
 	<form
-		action="?/updateWeights"
+		action="?/updateWeights&tab=gewichtung"
 		method="POST"
 		use:enhance={() => {
 			return async ({ update }) => {

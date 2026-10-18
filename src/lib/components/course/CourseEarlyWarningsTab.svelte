@@ -222,7 +222,7 @@
 			</div>
 
 			<form
-				action="?/createEarlyWarning"
+				action="?/createEarlyWarning&tab=fruehwarnungen"
 				method="POST"
 				use:enhance={() => async ({ result, update }) => {
 					await update();
