@@ -1,0 +1,25 @@
+# Caddyfile Snippet für den vorhandenen Caddy Reverse Proxy
+# Domain anpassen (z.B. noten.schule.at oder noten.deinedomain.at)
+
+noten.example.at {
+    # Wenn Notenmanager als Docker-Container an 127.0.0.1:3000 lauscht:
+    reverse_proxy 127.0.0.1:3000 {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-Proto https
+    }
+
+    # Alternativ: Wenn Caddy und Notenmanager im selben Docker-Netzwerk laufen:
+    # reverse_proxy notenmanager:3000
+
+    # Sicherheits-Header
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "SAMEORIGIN"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+
+    # Kompression
+    encode zstd gzip
+}

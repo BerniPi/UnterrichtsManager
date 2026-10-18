@@ -1,0 +1,50 @@
+node_modules
+
+# Output
+.output
+.vercel
+.netlify
+.wrangler
+/.svelte-kit
+/build
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.*
+!.env.example
+!.env.test
+
+# Vite
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+
+# SQLite Databases & Storage
+*.sqlite
+*.sqlite3
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+data/
+*.db.bak
+
+# Backups
+backups/
+*.bak
+*.sql
+*.tar.gz
+
+# User Imports & Uploads
+uploads/
+imports/
+*.xlsx
+*.xls
+*.csv
+!test-fixtures/*.csv

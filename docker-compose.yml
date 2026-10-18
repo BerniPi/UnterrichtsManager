@@ -1,0 +1,28 @@
+services:
+  notenmanager:
+    build: .
+    container_name: notenmanager
+    restart: unless-stopped
+    # Listening internally on 127.0.0.1:3000 (accessible to Caddy Reverse Proxy on the host)
+    # or attach to your shared caddy docker network below
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - HOST=0.0.0.0
+      - ORIGIN=https://noten.example.at
+      - PROTOCOL_HEADER=x-forwarded-proto
+      - DATABASE_URL=/app/data/notenmanager.db
+    volumes:
+      - notenmanager_data:/app/data
+
+volumes:
+  notenmanager_data:
+    name: notenmanager_data
+
+# Optional: If your Caddy runs in a Docker container in the same network:
+# networks:
+#   default:
+#     name: caddy-net
+#     external: true
