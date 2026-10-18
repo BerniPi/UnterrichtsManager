@@ -20,6 +20,7 @@
 				overdueEarlyWarnings: Array<any>;
 				totalOverdue: number;
 			};
+			assessmentEarlyWarningReminders?: Array<any>;
 			missingParticipationByCourse: Array<any>;
 			currentWeekNumber: number;
 			deadlines: Array<any>;
@@ -123,6 +124,11 @@
 					({data.overdueSummary.overdueReturns.length} Tests, {data.overdueSummary.overdueEarlyWarnings.length} Frühwarnungen)
 				</span>
 			</div>
+			{#if data.assessmentEarlyWarningReminders && data.assessmentEarlyWarningReminders.length > 0}
+				<div class="mt-2 text-xs text-amber-400 flex items-center space-x-1 font-medium">
+					<span>+ {data.assessmentEarlyWarningReminders.length} Frühwarn-Erinnerung(en) nach Tests</span>
+				</div>
+			{/if}
 		</div>
 
 		<!-- Participation Card -->
@@ -301,6 +307,80 @@
 			</div>
 		{/if}
 	</section>
+
+	<!-- Section: Early Warning Reminders (1 week after Test/Schularbeit) -->
+	{#if data.assessmentEarlyWarningReminders && data.assessmentEarlyWarningReminders.length > 0}
+		<section class="space-y-4">
+			<div class="flex items-center justify-between">
+				<h2 class="text-lg font-bold text-white flex items-center space-x-2">
+					<AlertTriangle class="w-5 h-5 text-amber-400" />
+					<span>Frühwarnungs-Checks nach Tests & Schularbeiten ({data.assessmentEarlyWarningReminders.length})</span>
+				</h2>
+				<span class="text-xs text-slate-400">1 Woche nach negativer Beurteilung gem. § 19 Abs. 4 SchUG</span>
+			</div>
+
+			<div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+				{#each data.assessmentEarlyWarningReminders as item}
+					<div class="p-4 rounded-xl bg-slate-900 border border-amber-900/60 hover:border-amber-700/60 transition flex flex-col justify-between space-y-3 shadow-md">
+						<div class="flex items-start justify-between gap-2">
+							<div>
+								<div class="flex items-center space-x-2">
+									<span class="px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-950 text-amber-300 border border-amber-800">
+										{item.assessmentType === 'schularbeit' ? 'Schularbeit' : 'Test'} • vor {item.daysSinceAssessment} Tagen
+									</span>
+									<span class="px-2 py-0.5 rounded text-[11px] font-medium bg-slate-800 text-slate-300">
+										{item.className} • {item.courseSubject}
+									</span>
+								</div>
+								<h3 class="font-bold text-white text-base mt-1.5">{item.studentName}</h3>
+								<p class="text-xs text-amber-300/90 mt-0.5">
+									Note <span class="font-bold text-red-400">5 (Nicht genügend)</span> bei <em>{item.assessmentTitle}</em> ({item.assessmentDate})
+								</p>
+								<p class="text-[11px] text-slate-400 mt-1">
+									Bisher keine Frühwarnung im laufenden Semester für diesen Kurs ausgestellt.
+								</p>
+							</div>
+						</div>
+
+						<div class="flex items-center gap-2 pt-2 border-t border-slate-800/80">
+							<a
+								href="/kurse/{item.courseId}?tab=fruehwarnungen&studentId={item.studentId}"
+								class="flex-1 py-1.5 px-3 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-medium text-xs flex items-center justify-center space-x-1.5 transition active:scale-95 shadow-md shadow-amber-600/20"
+							>
+								<AlertTriangle class="w-3.5 h-3.5" />
+								<span>Frühwarnung erfassen</span>
+							</a>
+
+							<form action="?/dismissAssessmentReminder" method="POST" use:enhance>
+								<input type="hidden" name="assessmentId" value={item.assessmentId} />
+								<input type="hidden" name="studentId" value={item.studentId} />
+								<button
+									type="submit"
+									title="Nicht nötig (z.B. mündlich verbessert)"
+									class="py-1.5 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium border border-slate-700 transition"
+								>
+									Nicht nötig
+								</button>
+							</form>
+
+							<form action="?/snoozeAssessmentReminder" method="POST" use:enhance>
+								<input type="hidden" name="assessmentId" value={item.assessmentId} />
+								<input type="hidden" name="studentId" value={item.studentId} />
+								<input type="hidden" name="days" value="7" />
+								<button
+									type="submit"
+									title="In 7 Tagen erneut erinnern"
+									class="py-1.5 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 text-xs font-medium border border-slate-700 transition"
+								>
+									+7 Tage
+								</button>
+							</form>
+						</div>
+					</div>
+				{/each}
+			</div>
+		</section>
+	{/if}
 
 	<!-- Section 2: Missing Participation This Week -->
 	<section class="space-y-4">

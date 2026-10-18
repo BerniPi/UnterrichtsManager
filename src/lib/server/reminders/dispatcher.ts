@@ -3,6 +3,7 @@ import { db, sqlite } from '../db';
 import * as schema from '../db/schema';
 import { eq } from 'drizzle-orm';
 import crypto from 'node:crypto';
+import { todayVienna } from '../../services/dates';
 
 // Setup VAPID keys from settings or generate them
 export function getOrCreateVapidKeys() {
@@ -189,17 +190,118 @@ export function getOverdueItems(referenceDateStr: string = new Date().toISOStrin
 	};
 }
 
+export interface AssessmentEarlyWarningReminder {
+	assessmentId: string;
+	assessmentTitle: string;
+	assessmentType: string;
+	assessmentDate: string;
+	courseId: string;
+	courseSubject: string;
+	className: string;
+	studentId: string;
+	studentName: string;
+	grade: number;
+	daysSinceAssessment: number;
+}
+
 /**
- * Checks for overdue items and dispatches Web Push notifications if there are any.
+ * Finds students who received a grade 5 on an assessment 1 week or more ago,
+ * but do not yet have an early warning issued in that course for the semester.
  */
-export async function runReminderCheck(referenceDateStr: string = new Date().toISOString().slice(0, 10)) {
+export function getAssessmentEarlyWarningReminders(
+	referenceDateStr: string = todayVienna()
+): AssessmentEarlyWarningReminder[] {
+	const rows = sqlite
+		.prepare(
+			`
+		SELECT 
+			a.id as assessment_id,
+			a.title as assessment_title,
+			a.type as assessment_type,
+			a.date as assessment_date,
+			c.id as course_id,
+			c.subject as course_subject,
+			cl.name as class_name,
+			s.id as student_id,
+			s.first_name || ' ' || s.last_name as student_name,
+			ar.grade,
+			CAST(julianday(?) - julianday(a.date) AS INTEGER) as days_since_assessment
+		FROM assessment_results ar
+		JOIN assessments a ON ar.assessment_id = a.id
+		JOIN courses c ON a.course_id = c.id
+		JOIN classes cl ON c.class_id = cl.id
+		JOIN students s ON ar.student_id = s.id
+		JOIN school_years sy ON c.school_year_id = sy.id
+		WHERE ar.grade = 5
+		  AND a.is_counted = 1
+		  AND s.status = 'active'
+		  AND CAST(julianday(?) - julianday(a.date) AS INTEGER) >= 7
+		  AND CAST(julianday(?) - julianday(a.date) AS INTEGER) <= 60
+		  AND NOT EXISTS (
+			  SELECT 1 FROM early_warnings ew
+			  WHERE ew.student_id = s.id
+			    AND ew.course_id = c.id
+			    AND ew.semester = CASE WHEN a.date <= sy.first_semester_end THEN 1 ELSE 2 END
+		  )
+		  AND NOT EXISTS (
+			  SELECT 1 FROM reminder_logs rl
+			  WHERE rl.entity_type = 'assessment_ew_reminder'
+			    AND rl.entity_id = (a.id || ':' || s.id)
+			    AND (
+			        rl.type = 'dismissed' 
+			        OR (rl.type = 'snoozed' AND rl.note > ?)
+			    )
+		  )
+		ORDER BY a.date DESC, s.last_name ASC
+	`
+		)
+		.all(referenceDateStr, referenceDateStr, referenceDateStr, referenceDateStr) as Array<{
+		assessment_id: string;
+		assessment_title: string;
+		assessment_type: string;
+		assessment_date: string;
+		course_id: string;
+		course_subject: string;
+		class_name: string;
+		student_id: string;
+		student_name: string;
+		grade: number;
+		days_since_assessment: number;
+	}>;
+
+	return rows.map((r) => ({
+		assessmentId: r.assessment_id,
+		assessmentTitle: r.assessment_title,
+		assessmentType: r.assessment_type,
+		assessmentDate: r.assessment_date,
+		courseId: r.course_id,
+		courseSubject: r.course_subject,
+		className: r.class_name,
+		studentId: r.student_id,
+		studentName: r.student_name,
+		grade: r.grade,
+		daysSinceAssessment: Math.max(0, r.days_since_assessment)
+	}));
+}
+
+/**
+ * Checks for overdue items & early warning reminders and dispatches Web Push notifications if there are any.
+ */
+export async function runReminderCheck(referenceDateStr: string = todayVienna()) {
 	const summary = getOverdueItems(referenceDateStr);
-	if (summary.totalOverdue === 0) {
+	const assessmentReminders = getAssessmentEarlyWarningReminders(referenceDateStr);
+	const totalItems = summary.totalOverdue + assessmentReminders.length;
+	if (totalItems === 0) {
 		return { dispatched: false, count: 0 };
 	}
 
-	const title = `⚠️ ${summary.totalOverdue} überfällige Unterschrift(en)`;
-	const body = `${summary.overdueReturns.length} Test(s) und ${summary.overdueEarlyWarnings.length} Frühwarnung(en) sind überfällig.`;
+	const parts: string[] = [];
+	if (summary.overdueReturns.length > 0) parts.push(`${summary.overdueReturns.length} Test-Rücklauf(e)`);
+	if (summary.overdueEarlyWarnings.length > 0) parts.push(`${summary.overdueEarlyWarnings.length} Frühwarnungs-Rücklauf(e)`);
+	if (assessmentReminders.length > 0) parts.push(`${assessmentReminders.length} Frühwarn-Erinnerung(en) nach Tests`);
+
+	const title = `⚠️ ${totalItems} Benachrichtigung(en)`;
+	const body = `${parts.join(', ')} stehen aus bzw. sind überfällig.`;
 
 	await sendPushToAll(title, body, '/');
 
@@ -230,5 +332,5 @@ export async function runReminderCheck(referenceDateStr: string = new Date().toI
 			.run();
 	}
 
-	return { dispatched: true, count: summary.totalOverdue };
+	return { dispatched: true, count: totalItems };
 }

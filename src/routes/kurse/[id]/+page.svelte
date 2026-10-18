@@ -31,6 +31,7 @@
 			earlyWarnings: Array<any>;
 			gradingTemplates?: Array<any>;
 			defaultReturnDays?: number;
+			initialStudentId?: string | null;
 		};
 	}
 
@@ -121,6 +122,7 @@
 				course={data.course}
 				students={data.evaluatedStudents}
 				earlyWarnings={data.earlyWarnings}
+				initialStudentId={data.initialStudentId}
 			/>
 		{:else if data.activeTab === 'gewichtung'}
 			<CourseWeightsTab course={data.course} />

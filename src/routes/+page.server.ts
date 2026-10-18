@@ -2,7 +2,7 @@ import type { PageServerLoad, Actions } from './$types';
 import { db, sqlite } from '$lib/server/db';
 import * as schema from '$lib/server/db/schema';
 import { eq, and } from 'drizzle-orm';
-import { getOverdueItems, runReminderCheck } from '$lib/server/reminders/dispatcher';
+import { getOverdueItems, getAssessmentEarlyWarningReminders, runReminderCheck } from '$lib/server/reminders/dispatcher';
 import { calculateSnoozeDate, isDeadlineApproaching } from '$lib/services/reminders';
 import { getIsoWeekAndYear } from '$lib/services/dates';
 import crypto from 'node:crypto';
@@ -13,6 +13,7 @@ export const load: PageServerLoad = async ({ parent }) => {
 
 	const todayStr = new Date().toISOString().slice(0, 10);
 	const overdueSummary = getOverdueItems(todayStr);
+	const assessmentEarlyWarningReminders = getAssessmentEarlyWarningReminders(todayStr);
 
 	// Calculate current calendar week (ISO 8601)
 	const { week: weekNumber, year } = getIsoWeekAndYear();
@@ -55,28 +56,28 @@ export const load: PageServerLoad = async ({ parent }) => {
 		}
 	}
 
-	// Deadlines check
+	// Deadlines check: real school calendar milestones (Notenschluss & Semesterende)
 	const deadlines = sy
 		? [
-				{
-					title: '1. Frühwarnfrist',
-					date: sy.earlyWarningDeadline1,
-					approaching: isDeadlineApproaching(sy.earlyWarningDeadline1, 21, todayStr)
-				},
 				{
 					title: '1. Notenschluss',
 					date: sy.gradingDeadline1,
 					approaching: isDeadlineApproaching(sy.gradingDeadline1, 21, todayStr)
 				},
 				{
-					title: '2. Frühwarnfrist',
-					date: sy.earlyWarningDeadline2,
-					approaching: isDeadlineApproaching(sy.earlyWarningDeadline2, 21, todayStr)
+					title: '1. Semesterende',
+					date: sy.firstSemesterEnd,
+					approaching: isDeadlineApproaching(sy.firstSemesterEnd, 21, todayStr)
 				},
 				{
 					title: '2. Notenschluss',
 					date: sy.gradingDeadline2,
 					approaching: isDeadlineApproaching(sy.gradingDeadline2, 21, todayStr)
+				},
+				{
+					title: 'Schuljahresende',
+					date: sy.secondSemesterEnd,
+					approaching: isDeadlineApproaching(sy.secondSemesterEnd, 21, todayStr)
 				}
 		  ]
 		: [];
@@ -89,6 +90,7 @@ export const load: PageServerLoad = async ({ parent }) => {
 
 	return {
 		overdueSummary,
+		assessmentEarlyWarningReminders,
 		missingParticipationByCourse,
 		currentWeekNumber: weekNumber,
 		deadlines,
@@ -173,6 +175,50 @@ export const actions: Actions = {
 				.run();
 		}
 
+		return { success: true };
+	},
+
+	snoozeAssessmentReminder: async ({ request }) => {
+		const form = await request.formData();
+		const assessmentId = form.get('assessmentId')?.toString();
+		const studentId = form.get('studentId')?.toString();
+		const days = parseInt(form.get('days')?.toString() || '7', 10);
+		const todayStr = new Date().toISOString().slice(0, 10);
+		const snoozeUntil = calculateSnoozeDate(days, todayStr);
+
+		if (assessmentId && studentId) {
+			db.insert(schema.reminderLogs)
+				.values({
+					id: crypto.randomUUID(),
+					entityType: 'assessment_ew_reminder',
+					entityId: `${assessmentId}:${studentId}`,
+					date: todayStr,
+					type: 'snoozed',
+					note: snoozeUntil
+				})
+				.run();
+		}
+		return { success: true };
+	},
+
+	dismissAssessmentReminder: async ({ request }) => {
+		const form = await request.formData();
+		const assessmentId = form.get('assessmentId')?.toString();
+		const studentId = form.get('studentId')?.toString();
+		const todayStr = new Date().toISOString().slice(0, 10);
+
+		if (assessmentId && studentId) {
+			db.insert(schema.reminderLogs)
+				.values({
+					id: crypto.randomUUID(),
+					entityType: 'assessment_ew_reminder',
+					entityId: `${assessmentId}:${studentId}`,
+					date: todayStr,
+					type: 'dismissed',
+					note: 'Manuell verworfen / Nicht nötig'
+				})
+				.run();
+		}
 		return { success: true };
 	},
 

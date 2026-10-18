@@ -67,7 +67,8 @@ export const load: PageServerLoad = async ({ params, url }) => {
 		homeworks,
 		earlyWarnings,
 		gradingTemplates,
-		defaultReturnDays: settings.defaultReturnDays
+		defaultReturnDays: settings.defaultReturnDays,
+		initialStudentId: url.searchParams.get('studentId') || null
 	};
 };
 

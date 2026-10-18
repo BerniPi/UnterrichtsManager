@@ -61,3 +61,22 @@ export function isDeadlineApproaching(
 		daysRemaining: Math.max(0, diffDays)
 	};
 }
+
+/**
+ * Checks if 1 week or more has passed since an assessment (test/schularbeit)
+ * to remind the teacher about potential early warnings (§ 19 Abs 4 SchUG).
+ */
+export function isAssessmentEarlyWarningDue(
+	assessmentDateStr: string,
+	referenceDateStr: string = todayVienna(),
+	minDays: number = 7,
+	maxDays: number = 60
+): { isDue: boolean; daysSince: number } {
+	const assess = new Date(assessmentDateStr.slice(0, 10) + 'T00:00:00Z');
+	const ref = new Date(referenceDateStr.slice(0, 10) + 'T00:00:00Z');
+	const diffDays = Math.floor((ref.getTime() - assess.getTime()) / (1000 * 60 * 60 * 24));
+	return {
+		isDue: diffDays >= minDays && diffDays <= maxDays,
+		daysSince: Math.max(0, diffDays)
+	};
+}

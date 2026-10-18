@@ -15,12 +15,14 @@
 		course: any;
 		students?: StudentCourseEvaluation[];
 		earlyWarnings?: Array<any>;
+		initialStudentId?: string | null;
 	}
 
 	let {
 		course,
 		students = [],
-		earlyWarnings = []
+		earlyWarnings = [],
+		initialStudentId = null
 	}: Props = $props();
 
 	let showIssueModal = $state(false);
@@ -28,6 +30,20 @@
 	let reason = $state('');
 	let returnDays = $state(7);
 	let semester = $state(1);
+
+	// Auto-open modal if initialStudentId is passed
+	$effect(() => {
+		if (initialStudentId) {
+			const s = students.find((st: any) => st.studentId === initialStudentId);
+			if (s) {
+				openIssueModal(s);
+			} else {
+				selectedStudentId = initialStudentId;
+				reason = 'Nicht genügend bei Leistungsfeststellung (§ 19 Abs 4 SchUG)';
+				showIssueModal = true;
+			}
+		}
+	});
 
 	// Find students with automatic suggestion who don't already have an active warning
 	const suggestedStudents = $derived(
