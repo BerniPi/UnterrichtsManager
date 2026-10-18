@@ -74,9 +74,11 @@
 	</div>
 
 	{#if toastMsg}
-		<div class="p-3 bg-emerald-950/90 border border-emerald-800 text-emerald-200 text-xs rounded-xl flex items-center space-x-2">
-			<CheckCircle2 class="w-4 h-4 text-emerald-400 shrink-0" />
-			<span>{toastMsg}</span>
+		<div class="fixed bottom-6 right-6 z-50 pointer-events-none transition-all duration-300">
+			<div class="px-4 py-2.5 bg-emerald-950/95 border border-emerald-700 text-emerald-200 text-xs font-semibold rounded-xl shadow-2xl flex items-center space-x-2 backdrop-blur-md">
+				<CheckCircle2 class="w-4 h-4 text-emerald-400 shrink-0" />
+				<span>{toastMsg}</span>
+			</div>
 		</div>
 	{/if}
 
