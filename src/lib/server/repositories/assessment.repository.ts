@@ -279,5 +279,21 @@ export const assessmentRepository = {
 				}
 			}
 		})();
+	},
+
+	delete(id: string): void {
+		sqlite.transaction(() => {
+			sqlite
+				.prepare(
+					`DELETE FROM reminder_logs 
+					 WHERE entity_type = 'assessment_return' 
+					   AND entity_id IN (SELECT id FROM assessment_returns WHERE assessment_id = ?)`
+				)
+				.run(id);
+
+			sqlite.prepare('DELETE FROM assessment_returns WHERE assessment_id = ?').run(id);
+			sqlite.prepare('DELETE FROM assessment_results WHERE assessment_id = ?').run(id);
+			sqlite.prepare('DELETE FROM assessments WHERE id = ?').run(id);
+		})();
 	}
 };

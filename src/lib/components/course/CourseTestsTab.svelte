@@ -22,7 +22,8 @@
 		Check,
 		Send,
 		AlertCircle,
-		Sparkles
+		Sparkles,
+		Trash2
 	} from '@lucide/svelte';
 
 	interface Props {
@@ -221,6 +222,40 @@
 						<Sliders class="w-4 h-4 text-blue-400" />
 						<span>Notenschlüssel</span>
 					</button>
+
+					<form
+						action="?/deleteAssessment&tab=tests"
+						method="POST"
+						use:enhance={() => {
+							return async ({ result, update }) => {
+								if (result.type === 'success') {
+									showToast('Test / Schularbeit gelöscht');
+									await goto(`/kurse/${course.id}?tab=tests`, { invalidateAll: true });
+								} else {
+									await update();
+								}
+							};
+						}}
+						onsubmit={(e) => {
+							if (
+								!confirm(
+									`Möchtest du "${selectedAssessment.title}" wirklich unwiderruflich löschen? Alle Noten und Rückläufe dazu werden entfernt.`
+								)
+							) {
+								e.preventDefault();
+							}
+						}}
+					>
+						<input type="hidden" name="assessmentId" value={selectedAssessment.id} />
+						<button
+							type="submit"
+							class="px-3 py-2 rounded-xl bg-red-950/60 hover:bg-red-900/80 text-red-400 hover:text-red-200 border border-red-900/60 text-xs font-semibold flex items-center space-x-1.5 transition active:scale-95"
+							title="Test / Schularbeit löschen"
+						>
+							<Trash2 class="w-4 h-4" />
+							<span class="hidden sm:inline">Löschen</span>
+						</button>
+					</form>
 				</div>
 			</div>
 

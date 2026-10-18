@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import { Plus, Eye, CheckCircle2, X } from '@lucide/svelte';
+	import { Plus, Eye, CheckCircle2, X, Trash2 } from '@lucide/svelte';
 
 	interface Props {
 		course: any;
@@ -16,8 +16,10 @@
 	let activeObsId = $state('');
 
 	$effect(() => {
-		if (observations.length > 0 && !activeObsId) {
+		if (observations.length > 0 && (!activeObsId || !observations.some((o: any) => o.id === activeObsId))) {
 			activeObsId = observations[0].id;
+		} else if (observations.length === 0) {
+			activeObsId = '';
 		}
 	});
 
@@ -104,6 +106,55 @@
 			<p class="text-slate-400 text-sm">Noch keine Mitarbeitsbeobachtungen angelegt.</p>
 		</div>
 	{:else}
+		<!-- Observation Header -->
+		<div class="p-4 bg-slate-900 border border-slate-800 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
+			<div>
+				<div class="flex items-center space-x-2">
+					<h4 class="text-base font-bold text-white">{selectedObs.title}</h4>
+					<span class="text-xs text-slate-400 font-mono">({selectedObs.maxPoints} Pkt. max.)</span>
+				</div>
+				<p class="text-xs text-slate-400 mt-1">
+					Datum: <strong>{selectedObs.date}</strong>
+					{#if selectedObs.description}
+						| <span class="italic text-slate-300">{selectedObs.description}</span>
+					{/if}
+				</p>
+			</div>
+
+			<form
+				action="?/deleteObservation&tab=beobachtungen"
+				method="POST"
+				use:enhance={() => {
+					return async ({ result, update }) => {
+						if (result.type === 'success') {
+							activeObsId = '';
+							showToast('Beobachtung gelöscht');
+						}
+						await update();
+					};
+				}}
+				onsubmit={(e) => {
+					if (
+						!confirm(
+							`Möchtest du die Beobachtung "${selectedObs.title}" wirklich löschen? Alle Punkte werden dabei entfernt.`
+						)
+					) {
+						e.preventDefault();
+					}
+				}}
+			>
+				<input type="hidden" name="observationId" value={selectedObs.id} />
+				<button
+					type="submit"
+					class="px-3 py-2 rounded-xl bg-red-950/60 hover:bg-red-900/80 text-red-400 hover:text-red-200 border border-red-900/60 text-xs font-semibold flex items-center space-x-1.5 transition active:scale-95 self-start sm:self-auto"
+					title="Beobachtung löschen"
+				>
+					<Trash2 class="w-4 h-4" />
+					<span>Löschen</span>
+				</button>
+			</form>
+		</div>
+
 		<!-- Observation Points Table -->
 		<div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-lg overflow-x-auto">
 			<table class="w-full text-left border-collapse text-xs">

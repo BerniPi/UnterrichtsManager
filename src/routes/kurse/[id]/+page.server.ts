@@ -257,6 +257,15 @@ export const actions: Actions = {
 		return { success: true };
 	},
 
+	deleteAssessment: async ({ request }) => {
+		const form = await request.formData();
+		const assessmentId = form.get('assessmentId')?.toString();
+		if (!assessmentId) return fail(400, { success: false, message: 'Assessment-ID fehlt' });
+
+		assessmentRepository.delete(assessmentId);
+		return { success: true };
+	},
+
 	createObservation: async ({ request, params }) => {
 		const form = await request.formData();
 		const title = form.get('title')?.toString().trim();
@@ -310,6 +319,15 @@ export const actions: Actions = {
 		}
 
 		observationRepository.saveScores(observationId, [{ studentId, points, note }]);
+		return { success: true };
+	},
+
+	deleteObservation: async ({ request }) => {
+		const form = await request.formData();
+		const observationId = form.get('observationId')?.toString();
+		if (!observationId) return fail(400, { success: false, message: 'Beobachtungs-ID fehlt' });
+
+		observationRepository.delete(observationId);
 		return { success: true };
 	},
 

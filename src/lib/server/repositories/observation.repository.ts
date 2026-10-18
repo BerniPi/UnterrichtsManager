@@ -123,5 +123,12 @@ export const observationRepository = {
 		sqlite
 			.prepare('DELETE FROM observation_scores WHERE observation_id = ? AND student_id = ?')
 			.run(observationId, studentId);
+	},
+
+	delete(id: string): void {
+		sqlite.transaction(() => {
+			sqlite.prepare('DELETE FROM observation_scores WHERE observation_id = ?').run(id);
+			sqlite.prepare('DELETE FROM observations WHERE id = ?').run(id);
+		})();
 	}
 };
