@@ -6,7 +6,7 @@ services:
     # Listening internally on 127.0.0.1:3000 (accessible to Caddy Reverse Proxy on the host)
     # or attach to your shared caddy docker network below
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:${HOST_PORT:-3000}:3000"
     env_file:
       - path: .env
         required: false
