@@ -98,3 +98,22 @@ export function reconcileStudentRoster(
 
 	return result;
 }
+
+/**
+ * Automatically assigns catalog numbers 1, 2, 3... sorted alphabetically
+ * by last name, then first name (using German collation rules).
+ */
+export function assignAlphabeticalCatalogNumbers<
+	T extends { firstName: string; lastName: string; catalogNumber?: number | null }
+>(students: T[]): T[] {
+	const sorted = [...students].sort((a, b) => {
+		const lastCmp = a.lastName.localeCompare(b.lastName, 'de', { sensitivity: 'base' });
+		if (lastCmp !== 0) return lastCmp;
+		return a.firstName.localeCompare(b.firstName, 'de', { sensitivity: 'base' });
+	});
+
+	return sorted.map((student, idx) => ({
+		...student,
+		catalogNumber: idx + 1
+	}));
+}

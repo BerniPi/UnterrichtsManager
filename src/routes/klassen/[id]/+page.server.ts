@@ -84,5 +84,29 @@ export const actions: Actions = {
 		}
 
 		return { success: true };
+	},
+
+	renumberAlphabetically: async ({ params }) => {
+		const classId = params.id;
+		const students = sqlite
+			.prepare(
+				`SELECT id, first_name, last_name FROM students WHERE class_id = ? AND status = 'active'`
+			)
+			.all(classId) as Array<{ id: string; first_name: string; last_name: string }>;
+
+		students.sort((a, b) => {
+			const lastCmp = a.last_name.localeCompare(b.last_name, 'de', { sensitivity: 'base' });
+			if (lastCmp !== 0) return lastCmp;
+			return a.first_name.localeCompare(b.first_name, 'de', { sensitivity: 'base' });
+		});
+
+		for (let i = 0; i < students.length; i++) {
+			db.update(schema.students)
+				.set({ catalogNumber: i + 1 })
+				.where(eq(schema.students.id, students[i].id))
+				.run();
+		}
+
+		return { success: true };
 	}
 };

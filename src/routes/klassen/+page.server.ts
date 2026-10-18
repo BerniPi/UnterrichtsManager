@@ -4,7 +4,12 @@ import * as schema from '$lib/server/db/schema';
 import { eq, and } from 'drizzle-orm';
 import crypto from 'node:crypto';
 import * as XLSX from 'xlsx';
-import { reconcileStudentRoster, type RawStudentImport, type ExistingStudent } from '$lib/services/reconciliation';
+import {
+	reconcileStudentRoster,
+	assignAlphabeticalCatalogNumbers,
+	type RawStudentImport,
+	type ExistingStudent
+} from '$lib/services/reconciliation';
 
 export const load: PageServerLoad = async ({ parent }) => {
 	const layoutData = await parent();
@@ -121,7 +126,14 @@ export const actions: Actions = {
 			return { success: false, message: 'Ungültige Importdaten' };
 		}
 
-		const incoming: RawStudentImport[] = JSON.parse(rawDataJson);
+		let incoming: RawStudentImport[] = JSON.parse(rawDataJson);
+		const hasImportedCat = incoming.some(
+			(s) => s.catalogNumber != null && !isNaN(Number(s.catalogNumber))
+		);
+		if (!hasImportedCat) {
+			incoming = assignAlphabeticalCatalogNumbers(incoming);
+		}
+
 		const existing = sqlite
 			.prepare(
 				'SELECT id, first_name as firstName, last_name as lastName, webuntis_id as webuntisId, catalog_number as catalogNumber, status FROM students WHERE class_id = ?'

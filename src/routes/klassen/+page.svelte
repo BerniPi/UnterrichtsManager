@@ -12,6 +12,7 @@
 		X,
 		School
 	} from '@lucide/svelte';
+	import { assignAlphabeticalCatalogNumbers } from '$lib/services/reconciliation';
 
 	interface Props {
 		data: {
@@ -56,12 +57,19 @@
 
 	function prepareMappedStudents() {
 		if (!form?.allRows) return [];
-		return form.allRows.map((row: any) => ({
+		const mapped = form.allRows.map((row: any) => ({
 			firstName: String(row[firstNameCol] || '').trim(),
 			lastName: String(row[lastNameCol] || '').trim(),
 			webuntisId: idCol ? String(row[idCol] || '').trim() : undefined,
 			catalogNumber: catCol && !isNaN(parseInt(row[catCol], 10)) ? parseInt(row[catCol], 10) : undefined
 		}));
+
+		const hasImportedCat = mapped.some((s: any) => s.catalogNumber != null && !isNaN(s.catalogNumber));
+		if (!hasImportedCat) {
+			return assignAlphabeticalCatalogNumbers(mapped);
+		}
+
+		return mapped;
 	}
 </script>
 

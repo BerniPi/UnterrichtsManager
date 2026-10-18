@@ -8,7 +8,8 @@
 		UserX,
 		BookOpen,
 		ExternalLink,
-		X
+		X,
+		Hash
 	} from '@lucide/svelte';
 
 	interface Props {
@@ -52,6 +53,17 @@
 		</div>
 
 		<div class="flex items-center space-x-3">
+			<form action="?/renumberAlphabetically" method="POST" use:enhance>
+				<button
+					type="submit"
+					class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white font-medium text-xs border border-slate-700 transition flex items-center space-x-1.5 active:scale-95"
+					title="Katalognummern für alle aktiven Schüler alphabetisch (A–Z) durchnummerieren"
+				>
+					<Hash class="w-3.5 h-3.5 text-blue-400" />
+					<span>Katalognummern (A–Z) vergeben</span>
+				</button>
+			</form>
+
 			<button
 				type="button"
 				onclick={() => (showAddModal = true)}
@@ -105,9 +117,11 @@
 			{#each visibleStudents as student}
 				<div class="p-4 flex items-center justify-between hover:bg-slate-800/40 transition">
 					<div class="flex items-center space-x-3">
-						<span class="w-8 h-8 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-center text-xs font-bold text-slate-300">
-							{student.catalog_number ?? '–'}
-						</span>
+						{#if student.catalog_number != null}
+							<span class="w-8 h-8 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-center text-xs font-bold text-slate-300">
+								{student.catalog_number}
+							</span>
+						{/if}
 						<div>
 							<a
 								href="/schueler/{student.id}"

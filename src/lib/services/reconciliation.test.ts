@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
 	reconcileStudentRoster,
+	assignAlphabeticalCatalogNumbers,
 	type ExistingStudent,
 	type RawStudentImport
 } from './reconciliation';
@@ -56,5 +57,23 @@ describe('Student Roster Reconciliation', () => {
 		expect(result.unchanged[0].existing.id).toBe('1');
 		expect(result.added.length).toBe(1);
 		expect(result.added[0].lastName).toBe('Neu');
+	});
+
+	it('assigns catalog numbers alphabetically by last name and first name', () => {
+		const unnumbered: RawStudentImport[] = [
+			{ firstName: 'Tobias', lastName: 'Mayer' },
+			{ firstName: 'Anna', lastName: 'Huber' },
+			{ firstName: 'Lukas', lastName: 'Huber' },
+			{ firstName: 'David', lastName: 'Bauer' }
+		];
+
+		const numbered = assignAlphabeticalCatalogNumbers(unnumbered);
+
+		expect(numbered).toEqual([
+			{ firstName: 'David', lastName: 'Bauer', catalogNumber: 1 },
+			{ firstName: 'Anna', lastName: 'Huber', catalogNumber: 2 },
+			{ firstName: 'Lukas', lastName: 'Huber', catalogNumber: 3 },
+			{ firstName: 'Tobias', lastName: 'Mayer', catalogNumber: 4 }
+		]);
 	});
 });

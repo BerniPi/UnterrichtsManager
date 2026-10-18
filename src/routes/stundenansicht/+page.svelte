@@ -2,8 +2,6 @@
 	import { enhance } from '$app/forms';
 	import { goto } from '$app/navigation';
 	import {
-		Plus,
-		Minus,
 		Equal,
 		Check,
 		X,
@@ -157,9 +155,11 @@
 					<!-- Top Row: Student Name, Catalog Number & Overdue Alert -->
 					<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-800/70">
 						<div class="flex items-center space-x-3">
-							<span class="w-7 h-7 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-bold text-slate-300">
-								{student.catalogNumber ?? '–'}
-							</span>
+							{#if student.catalogNumber != null}
+								<span class="w-7 h-7 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-bold text-slate-300">
+									{student.catalogNumber}
+								</span>
+							{/if}
 							<div>
 								<a
 									href="/schueler/{student.id}"
@@ -276,9 +276,9 @@
 									<input type="hidden" name="year" value={data.currentYear} />
 									<button
 										type="submit"
-										class="w-full py-3 px-2 rounded-xl font-extrabold text-lg flex items-center justify-center space-x-1 transition active:scale-95 {student.participation?.value === 'plus' ? 'bg-emerald-600 text-white ring-2 ring-emerald-400 shadow-lg shadow-emerald-500/30' : 'bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-slate-700'}"
+										class="w-full py-3 px-2 rounded-xl font-black text-2xl flex items-center justify-center transition active:scale-95 {student.participation?.value === 'plus' ? 'bg-emerald-600 text-white ring-2 ring-emerald-400 shadow-lg shadow-emerald-500/30' : 'bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-slate-700'}"
+										title="Positive Mitarbeit (+)"
 									>
-										<Plus class="w-5 h-5 stroke-[3]" />
 										<span>+</span>
 									</button>
 								</form>
@@ -292,9 +292,9 @@
 									<input type="hidden" name="year" value={data.currentYear} />
 									<button
 										type="submit"
-										class="w-full py-3 px-2 rounded-xl font-extrabold text-lg flex items-center justify-center space-x-1 transition active:scale-95 {student.participation?.value === 'tilde' ? 'bg-amber-600 text-white ring-2 ring-amber-400 shadow-lg shadow-amber-500/30' : 'bg-slate-800 hover:bg-slate-700 text-amber-400 border border-slate-700'}"
+										class="w-full py-3 px-2 rounded-xl font-black text-2xl flex items-center justify-center transition active:scale-95 {student.participation?.value === 'tilde' ? 'bg-amber-600 text-white ring-2 ring-amber-400 shadow-lg shadow-amber-500/30' : 'bg-slate-800 hover:bg-slate-700 text-amber-400 border border-slate-700'}"
+										title="Neutrale Mitarbeit (~)"
 									>
-										<Equal class="w-5 h-5 stroke-[3]" />
 										<span>~</span>
 									</button>
 								</form>
@@ -308,9 +308,9 @@
 									<input type="hidden" name="year" value={data.currentYear} />
 									<button
 										type="submit"
-										class="w-full py-3 px-2 rounded-xl font-extrabold text-lg flex items-center justify-center space-x-1 transition active:scale-95 {student.participation?.value === 'minus' ? 'bg-red-600 text-white ring-2 ring-red-400 shadow-lg shadow-red-500/30' : 'bg-slate-800 hover:bg-slate-700 text-red-400 border border-slate-700'}"
+										class="w-full py-3 px-2 rounded-xl font-black text-2xl flex items-center justify-center transition active:scale-95 {student.participation?.value === 'minus' ? 'bg-red-600 text-white ring-2 ring-red-400 shadow-lg shadow-red-500/30' : 'bg-slate-800 hover:bg-slate-700 text-red-400 border border-slate-700'}"
+										title="Negative Mitarbeit (−)"
 									>
-										<Minus class="w-5 h-5 stroke-[3]" />
 										<span>−</span>
 									</button>
 								</form>
