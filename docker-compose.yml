@@ -14,8 +14,8 @@ services:
       - NODE_ENV=production
       - PORT=3000
       - HOST=0.0.0.0
-      - ORIGIN=${ORIGIN:-https://noten.example.at}
-      - PROTOCOL_HEADER=x-forwarded-proto
+      - ORIGIN=${ORIGIN:-}
+      - PROTOCOL_HEADER=${PROTOCOL_HEADER:-}
       - DATABASE_URL=/app/data/notenmanager.db
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
     volumes:
