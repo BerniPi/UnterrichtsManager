@@ -305,7 +305,7 @@
 							</tr>
 						</thead>
 						<tbody class="divide-y divide-slate-800/80 text-slate-200">
-							{#each selectedAssessment.results as r, idx}
+							{#each selectedAssessment.results as r, idx (r.studentId)}
 								{@const liveGrade = r.isAbsent ? null : calculateLiveGrade(r.points)}
 								<tr class="hover:bg-slate-800/40 transition {liveGrade === 5 ? 'bg-red-950/20' : ''}">
 									<td class="py-3 px-3 text-center font-bold text-slate-400">{r.catalogNumber ?? '–'}</td>
@@ -321,9 +321,10 @@
 											action="?/saveAssessmentScore&tab=tests"
 											method="POST"
 											use:enhance={() => {
-												return async ({ update }) => {
-													showToast(`Punkte für ${r.lastName} gespeichert`);
-													await update();
+												return async ({ result }) => {
+													if (result.type === 'success') {
+														showToast(`Punkte für ${r.lastName} gespeichert`);
+													}
 												};
 											}}
 											class="inline-block"
@@ -377,12 +378,17 @@
 										<form
 											action="?/saveAssessmentScore&tab=tests"
 											method="POST"
-											use:enhance
+											use:enhance={() => {
+												r.isAbsent = !r.isAbsent;
+												return async ({ result }) => {
+													if (result.type !== 'success') r.isAbsent = !r.isAbsent;
+												};
+											}}
 										>
 											<input type="hidden" name="assessmentId" value={selectedAssessment.id} />
 											<input type="hidden" name="studentId" value={r.studentId} />
 											<input type="hidden" name="points" value={r.points ?? ''} />
-											<input type="hidden" name="isAbsent" value={r.isAbsent ? 'false' : 'true'} />
+											<input type="hidden" name="isAbsent" value={r.isAbsent ? 'true' : 'false'} />
 											<input type="hidden" name="isMadeUp" value={r.isMadeUp ? 'true' : 'false'} />
 											<button
 												type="submit"
@@ -398,13 +404,18 @@
 										<form
 											action="?/saveAssessmentScore&tab=tests"
 											method="POST"
-											use:enhance
+											use:enhance={() => {
+												r.isMadeUp = !r.isMadeUp;
+												return async ({ result }) => {
+													if (result.type !== 'success') r.isMadeUp = !r.isMadeUp;
+												};
+											}}
 										>
 											<input type="hidden" name="assessmentId" value={selectedAssessment.id} />
 											<input type="hidden" name="studentId" value={r.studentId} />
 											<input type="hidden" name="points" value={r.points ?? ''} />
 											<input type="hidden" name="isAbsent" value={r.isAbsent ? 'true' : 'false'} />
-											<input type="hidden" name="isMadeUp" value={r.isMadeUp ? 'false' : 'true'} />
+											<input type="hidden" name="isMadeUp" value={r.isMadeUp ? 'true' : 'false'} />
 											<button
 												type="submit"
 												class="p-1 px-2 rounded text-xs transition {r.isMadeUp ? 'text-emerald-400 bg-emerald-950/80 border border-emerald-800 font-bold' : 'text-slate-500 hover:text-white'}"

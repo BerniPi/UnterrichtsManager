@@ -35,6 +35,24 @@
 		toastMsg = msg;
 		setTimeout(() => (toastMsg = null), 2000);
 	}
+
+	function handleKeyDown(e: KeyboardEvent, index: number) {
+		if (e.key === 'Enter' || e.key === 'ArrowDown') {
+			e.preventDefault();
+			const nextInput = document.getElementById(`obs-points-input-${index + 1}`) as HTMLInputElement;
+			if (nextInput) {
+				nextInput.focus();
+				nextInput.select();
+			}
+		} else if (e.key === 'ArrowUp') {
+			e.preventDefault();
+			const prevInput = document.getElementById(`obs-points-input-${index - 1}`) as HTMLInputElement;
+			if (prevInput) {
+				prevInput.focus();
+				prevInput.select();
+			}
+		}
+	}
 </script>
 
 <div class="space-y-4">
@@ -96,7 +114,7 @@
 					</tr>
 				</thead>
 				<tbody class="divide-y divide-slate-800/80 text-slate-200">
-					{#each selectedObs.scores as s}
+					{#each selectedObs.scores as s, idx (s.studentId)}
 						<tr class="hover:bg-slate-800/40 transition">
 							<td class="py-3 px-3 text-center font-bold text-slate-400">{s.catalogNumber ?? '–'}</td>
 							<td class="py-3 px-4 font-bold text-white">{s.lastName} {s.firstName}</td>
@@ -107,9 +125,10 @@
 									action="?/saveObservationScore&tab=beobachtungen"
 									method="POST"
 									use:enhance={() => {
-										return async ({ update }) => {
-											showToast(`Punkte für ${s.lastName} gespeichert`);
-											await update();
+										return async ({ result }) => {
+											if (result.type === 'success') {
+												showToast(`Punkte für ${s.lastName} gespeichert`);
+											}
 										};
 									}}
 									class="inline-block"
@@ -117,12 +136,14 @@
 									<input type="hidden" name="observationId" value={selectedObs.id} />
 									<input type="hidden" name="studentId" value={s.studentId} />
 									<input
+										id="obs-points-input-{idx}"
 										type="number"
 										name="points"
 										step="0.5"
 										min="0"
 										max={selectedObs.maxPoints}
-										value={s.points ?? ''}
+										bind:value={s.points}
+										onkeydown={(e) => handleKeyDown(e, idx)}
 										onchange={(e) => (e.target as HTMLInputElement).form?.requestSubmit()}
 										class="w-20 px-2 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-white font-mono font-bold text-center text-sm focus:ring-2 focus:ring-blue-500"
 									/>

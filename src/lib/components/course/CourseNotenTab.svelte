@@ -85,7 +85,7 @@
 				</tr>
 			</thead>
 			<tbody class="divide-y divide-slate-800/80 text-slate-200">
-				{#each students as s}
+				{#each students as s (s.studentId)}
 					<tr class="hover:bg-slate-800/40 transition {s.earlyWarningSuggestion.shouldWarn && !s.hasActiveEarlyWarning ? 'bg-amber-950/15' : ''}">
 						<td class="py-3 px-3 text-center font-bold text-slate-400">{s.catalogNumber ?? '–'}</td>
 						<td class="py-3 px-4">
@@ -160,9 +160,10 @@
 								action="?/saveFinalGrade&tab=noten"
 								method="POST"
 								use:enhance={() => {
-									return async ({ update }) => {
-										showToast(`Endnote für ${s.lastName} aktualisiert`);
-										await update();
+									return async ({ result }) => {
+										if (result.type === 'success') {
+											showToast(`Endnote für ${s.lastName} aktualisiert`);
+										}
 									};
 								}}
 								class="inline-flex items-center space-x-1.5"
