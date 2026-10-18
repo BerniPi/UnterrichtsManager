@@ -1,3 +1,4 @@
+import { fail } from '@sveltejs/kit';
 import type { PageServerLoad, Actions } from './$types';
 import { courseRepository } from '$lib/server/repositories/course.repository';
 import { db } from '$lib/server/db';
@@ -23,7 +24,7 @@ export const load: PageServerLoad = async ({ parent }) => {
 };
 
 export const actions: Actions = {
-	createCourse: async ({ request, parent }) => {
+	createCourse: async ({ request }) => {
 		const form = await request.formData();
 		const classId = form.get('classId')?.toString();
 		const schoolYearId = form.get('schoolYearId')?.toString();
@@ -36,7 +37,7 @@ export const actions: Actions = {
 		const weightHomework = parseFloat(form.get('weightHomework')?.toString() || '5');
 
 		if (!classId || !schoolYearId || !subject) {
-			return { success: false, message: 'Klasse und Fach erforderlich' };
+			return fail(400, { success: false, message: 'Klasse und Fach erforderlich' });
 		}
 
 		courseRepository.create({

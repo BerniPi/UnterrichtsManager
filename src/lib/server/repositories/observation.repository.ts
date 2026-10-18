@@ -117,5 +117,11 @@ export const observationRepository = {
 					.run();
 			}
 		}
+	},
+
+	deleteScore(observationId: string, studentId: string): void {
+		sqlite
+			.prepare('DELETE FROM observation_scores WHERE observation_id = ? AND student_id = ?')
+			.run(observationId, studentId);
 	}
 };

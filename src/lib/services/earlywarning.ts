@@ -28,10 +28,12 @@ export function checkEarlyWarningSuggestion(
 	// Determine semester based on current date vs firstSemesterEnd
 	const semester: 1 | 2 = context.currentDateStr <= context.firstSemesterEnd ? 1 : 2;
 
-	// Check 1: Calculated average / suggested grade is at or above threshold
-	if (breakdown.calculatedAverage !== null && breakdown.calculatedAverage >= threshold) {
+	// Check 1: Calculated average / suggested grade is at or above threshold (check against unrounded average)
+	const avg = breakdown.rawAverage ?? breakdown.calculatedAverage;
+	if (avg !== null && avg >= threshold) {
+		const displayAvg = breakdown.calculatedAverage !== null ? breakdown.calculatedAverage.toFixed(2) : avg.toFixed(2);
 		reasons.push(
-			`Gesamtrechnerischer Notendurchschnitt liegt bei ${breakdown.calculatedAverage.toFixed(2)} (Schwelle: ${threshold.toFixed(2)})`
+			`Gesamtrechnerischer Notendurchschnitt liegt bei ${displayAvg} (Schwelle: ${threshold.toFixed(2)})`
 		);
 	}
 

@@ -1,9 +1,11 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 
-	let { form } = $props<{
-		form?: { message?: string; needsTotp?: boolean };
-	}>();
+	interface Props {
+		form?: { message?: string; needsTotp?: boolean } | null;
+	}
+
+	let { form }: Props = $props();
 
 	let loading = $state(false);
 	let showTotp = $state(false);

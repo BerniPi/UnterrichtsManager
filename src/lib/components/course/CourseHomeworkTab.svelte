@@ -2,13 +2,15 @@
 	import { enhance } from '$app/forms';
 	import { Plus, Check, Equal, X, CheckCircle2 } from '@lucide/svelte';
 
+	interface Props {
+		course: any;
+		homeworks?: Array<any>;
+	}
+
 	let {
 		course,
 		homeworks = []
-	} = $props<{
-		course: any;
-		homeworks: Array<any>;
-	}>();
+	}: Props = $props();
 
 	let showCreateModal = $state(false);
 	let title = $state('');
@@ -99,7 +101,10 @@
 			<form
 				action="?/createHomework"
 				method="POST"
-				use:enhance={() => () => (showCreateModal = false)}
+				use:enhance={() => async ({ result, update }) => {
+					await update();
+					if (result.type === 'success') showCreateModal = false;
+				}}
 				class="space-y-4"
 			>
 				<div>

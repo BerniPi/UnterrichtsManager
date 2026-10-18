@@ -13,7 +13,7 @@
 		School
 	} from '@lucide/svelte';
 
-	let { data, form } = $props<{
+	interface Props {
 		data: {
 			activeSchoolYear: any;
 			classes: Array<{
@@ -25,7 +25,9 @@
 			}>;
 		};
 		form?: any;
-	}>();
+	}
+
+	let { data, form }: Props = $props();
 
 	let showCreateModal = $state(false);
 	let showImportModal = $state(false);
@@ -167,7 +169,10 @@
 			<form
 				action="?/createClass"
 				method="POST"
-				use:enhance={() => () => (showCreateModal = false)}
+				use:enhance={() => async ({ result, update }) => {
+					await update();
+					if (result.type === 'success') showCreateModal = false;
+				}}
 				class="space-y-4"
 			>
 				<input type="hidden" name="schoolYearId" value={data.activeSchoolYear?.id} />

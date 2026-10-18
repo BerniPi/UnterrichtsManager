@@ -1,3 +1,5 @@
+import { addDays, todayVienna } from './dates';
+
 /**
  * Checks if a return item (assessment return or early warning) is currently overdue.
  */
@@ -5,7 +7,7 @@ export function isItemOverdue(
 	dueDate: string,
 	isSigned: boolean,
 	snoozedUntil: string | null | undefined,
-	referenceDateStr: string = new Date().toISOString().slice(0, 10)
+	referenceDateStr: string = todayVienna()
 ): boolean {
 	if (isSigned) return false;
 
@@ -22,10 +24,10 @@ export function isItemOverdue(
  */
 export function getDaysOverdue(
 	dueDate: string,
-	referenceDateStr: string = new Date().toISOString().slice(0, 10)
+	referenceDateStr: string = todayVienna()
 ): number {
-	const due = new Date(dueDate);
-	const ref = new Date(referenceDateStr);
+	const due = new Date(dueDate.slice(0, 10) + 'T00:00:00Z');
+	const ref = new Date(referenceDateStr.slice(0, 10) + 'T00:00:00Z');
 	const diffMs = ref.getTime() - due.getTime();
 	if (diffMs <= 0) return 0;
 	return Math.floor(diffMs / (1000 * 60 * 60 * 24));
@@ -33,14 +35,13 @@ export function getDaysOverdue(
 
 /**
  * Calculates a snooze target date (YYYY-MM-DD) by adding N days to the reference date.
+ * Uses UTC date calculation to avoid DST clock shift errors.
  */
 export function calculateSnoozeDate(
 	daysToAdd: number,
-	referenceDateStr: string = new Date().toISOString().slice(0, 10)
+	referenceDateStr: string = todayVienna()
 ): string {
-	const d = new Date(referenceDateStr);
-	d.setDate(d.getDate() + daysToAdd);
-	return d.toISOString().slice(0, 10);
+	return addDays(referenceDateStr, daysToAdd);
 }
 
 /**
@@ -49,10 +50,10 @@ export function calculateSnoozeDate(
 export function isDeadlineApproaching(
 	deadlineStr: string,
 	daysThreshold: number = 14,
-	referenceDateStr: string = new Date().toISOString().slice(0, 10)
+	referenceDateStr: string = todayVienna()
 ): { isApproaching: boolean; daysRemaining: number } {
-	const deadline = new Date(deadlineStr);
-	const ref = new Date(referenceDateStr);
+	const deadline = new Date(deadlineStr.slice(0, 10) + 'T00:00:00Z');
+	const ref = new Date(referenceDateStr.slice(0, 10) + 'T00:00:00Z');
 	const diffDays = Math.ceil((deadline.getTime() - ref.getTime()) / (1000 * 60 * 60 * 24));
 
 	return {

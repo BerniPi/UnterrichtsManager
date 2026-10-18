@@ -13,7 +13,7 @@
 		ArrowRight
 	} from '@lucide/svelte';
 
-	let { data } = $props<{
+	interface Props {
 		data: {
 			overdueSummary: {
 				overdueReturns: Array<any>;
@@ -26,7 +26,9 @@
 			isNearNotenschluss: boolean;
 			openEarlyWarningsCount: number;
 		};
-	}>();
+	}
+
+	let { data }: Props = $props();
 
 	let pushChecking = $state(false);
 	let pushMessage = $state<string | null>(null);

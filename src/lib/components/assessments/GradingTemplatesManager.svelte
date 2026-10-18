@@ -17,13 +17,15 @@
 		AlertCircle
 	} from '@lucide/svelte';
 
+	interface Props {
+		templates?: Array<GradingScaleTemplate>;
+		form?: any;
+	}
+
 	let {
 		templates = [],
 		form = null
-	} = $props<{
-		templates: Array<GradingScaleTemplate>;
-		form?: any;
-	}>();
+	}: Props = $props();
 
 	// Modal State
 	let showModal = $state(false);
@@ -277,9 +279,11 @@
 				action="?/saveTemplate"
 				method="POST"
 				use:enhance={() => {
-					return async ({ update }) => {
+					return async ({ result, update }) => {
 						await update();
-						showModal = false;
+						if (result.type === 'success') {
+							showModal = false;
+						}
 					};
 				}}
 				class="space-y-4"

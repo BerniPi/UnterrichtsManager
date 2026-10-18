@@ -4,6 +4,7 @@ import * as schema from '$lib/server/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { getOverdueItems, runReminderCheck } from '$lib/server/reminders/dispatcher';
 import { calculateSnoozeDate, isDeadlineApproaching } from '$lib/services/reminders';
+import { getIsoWeekAndYear } from '$lib/services/dates';
 import crypto from 'node:crypto';
 
 export const load: PageServerLoad = async ({ parent }) => {
@@ -13,11 +14,8 @@ export const load: PageServerLoad = async ({ parent }) => {
 	const todayStr = new Date().toISOString().slice(0, 10);
 	const overdueSummary = getOverdueItems(todayStr);
 
-	// Calculate current calendar week
-	const now = new Date();
-	const firstJan = new Date(now.getFullYear(), 0, 1);
-	const weekNumber = Math.ceil(((now.getTime() - firstJan.getTime()) / 86400000 + firstJan.getDay() + 1) / 7);
-	const year = now.getFullYear();
+	// Calculate current calendar week (ISO 8601)
+	const { week: weekNumber, year } = getIsoWeekAndYear();
 
 	// Find students with NO participation entry in their courses for the current week
 	const courses = layoutData.coursesList || [];

@@ -13,7 +13,7 @@
 		GraduationCap
 	} from '@lucide/svelte';
 
-	let { data, children } = $props<{
+	interface Props {
 		data: {
 			user: any;
 			currentSchoolYear?: any;
@@ -21,7 +21,9 @@
 			totalOverdueCount?: number;
 		};
 		children: any;
-	}>();
+	}
+
+	let { data, children }: Props = $props();
 
 	const currentPath = $derived(page.url.pathname);
 	const isAuthPage = $derived(currentPath.startsWith('/login'));

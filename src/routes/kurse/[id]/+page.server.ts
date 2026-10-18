@@ -1,4 +1,4 @@
-import { error } from '@sveltejs/kit';
+import { error, fail } from '@sveltejs/kit';
 import type { PageServerLoad, Actions } from './$types';
 import { courseRepository } from '$lib/server/repositories/course.repository';
 import { assessmentRepository } from '$lib/server/repositories/assessment.repository';
@@ -7,9 +7,10 @@ import { earlyWarningRepository } from '$lib/server/repositories/earlywarning.re
 import { homeworkRepository } from '$lib/server/repositories/homework.repository';
 import { participationRepository } from '$lib/server/repositories/participation.repository';
 import { gradingTemplateRepository } from '$lib/server/repositories/grading-template.repository';
+import { settingsRepository } from '$lib/server/repositories/settings.repository';
 import { evaluateCourseStudents } from '$lib/services/student-evaluator';
 import { generateWebUntisExcel, generateWebUntisCsv } from '$lib/services/export/webuntis';
-import type { GradingThreshold } from '$lib/services/grading';
+import { validateScale, type GradingThreshold } from '$lib/services/grading';
 import { db, sqlite } from '$lib/server/db';
 import * as schema from '$lib/server/db/schema';
 import { eq, and } from 'drizzle-orm';
@@ -24,6 +25,7 @@ export const load: PageServerLoad = async ({ params, url }) => {
 	}
 
 	const activeTab = url.searchParams.get('tab') || 'noten';
+	const settings = settingsRepository.getAll();
 
 	const weights = {
 		weightSchularbeiten: course.weightSchularbeiten,
@@ -34,7 +36,7 @@ export const load: PageServerLoad = async ({ params, url }) => {
 	};
 
 	// 1. Evaluations with Grade Suggestions
-	const evaluatedStudents = evaluateCourseStudents(courseId, weights);
+	const evaluatedStudents = evaluateCourseStudents(courseId, weights, settings.earlyWarningThreshold);
 
 	// 2. Assessments
 	const assessments = assessmentRepository.getByCourse(courseId);
@@ -64,7 +66,8 @@ export const load: PageServerLoad = async ({ params, url }) => {
 		observations,
 		homeworks,
 		earlyWarnings,
-		gradingTemplates
+		gradingTemplates,
+		defaultReturnDays: settings.defaultReturnDays
 	};
 };
 
@@ -72,15 +75,42 @@ export const actions: Actions = {
 	saveFinalGrade: async ({ request, params }) => {
 		const form = await request.formData();
 		const studentId = form.get('studentId')?.toString();
-		const manualGrade = form.get('manualGrade') ? parseInt(form.get('manualGrade')!.toString(), 10) : null;
-		const suggestedGrade = form.get('suggestedGrade') ? parseFloat(form.get('suggestedGrade')!.toString()) : null;
+		const manualGradeRaw = form.get('manualGrade')?.toString();
+		const manualGrade = manualGradeRaw && manualGradeRaw.trim() !== '' ? parseInt(manualGradeRaw, 10) : null;
+		const suggestedGradeRaw = form.get('suggestedGrade')?.toString();
+		const suggestedGrade = suggestedGradeRaw && suggestedGradeRaw.trim() !== '' ? parseFloat(suggestedGradeRaw) : null;
 		const note = form.get('note')?.toString().trim() || null;
+		const semesterRaw = form.get('semester')?.toString();
 
-		if (!studentId) return { success: false };
+		if (!studentId) return fail(400, { success: false, message: 'Schüler-ID fehlt' });
+
+		if (manualGrade !== null && (isNaN(manualGrade) || manualGrade < 1 || manualGrade > 5)) {
+			return fail(400, { success: false, message: 'Note muss zwischen 1 und 5 liegen' });
+		}
+
+		let semester = 1;
+		if (semesterRaw === '1' || semesterRaw === '2') {
+			semester = parseInt(semesterRaw, 10);
+		} else {
+			const sy = sqlite
+				.prepare(
+					`
+				SELECT sy.first_semester_end
+				FROM courses c
+				JOIN school_years sy ON c.school_year_id = sy.id
+				WHERE c.id = ?
+			`
+				)
+				.get(params.id) as { first_semester_end: string } | undefined;
+			const todayStr = new Date().toISOString().slice(0, 10);
+			if (sy?.first_semester_end && todayStr > sy.first_semester_end) {
+				semester = 2;
+			}
+		}
 
 		const existing = sqlite
-			.prepare('SELECT id FROM course_final_grades WHERE course_id = ? AND student_id = ?')
-			.get(params.id, studentId) as { id: string } | undefined;
+			.prepare('SELECT id FROM course_final_grades WHERE course_id = ? AND student_id = ? AND semester = ?')
+			.get(params.id, studentId, semester) as { id: string } | undefined;
 
 		if (existing) {
 			db.update(schema.courseFinalGrades)
@@ -93,7 +123,7 @@ export const actions: Actions = {
 					id: crypto.randomUUID(),
 					courseId: params.id,
 					studentId,
-					semester: 1,
+					semester,
 					suggestedGrade,
 					manualGrade,
 					note
@@ -107,13 +137,15 @@ export const actions: Actions = {
 	createAssessment: async ({ request, params }) => {
 		const form = await request.formData();
 		const title = form.get('title')?.toString().trim();
-		const type = form.get('type')?.toString() as 'schularbeit' | 'test' | 'wiederholung';
+		const type = form.get('type')?.toString();
 		const date = form.get('date')?.toString();
 		const maxPoints = parseFloat(form.get('maxPoints')?.toString() || '48');
-		const returnDays = parseInt(form.get('returnDays')?.toString() || '7', 10);
+		const defaultReturnDays = settingsRepository.get('defaultReturnDays');
+		const returnDays = parseInt(form.get('returnDays')?.toString() || String(defaultReturnDays), 10);
 
-		if (!title || !type || !date || maxPoints <= 0) {
-			return { success: false, message: 'Alle Felder müssen ausgefüllt sein' };
+		const validTypes = ['schularbeit', 'test', 'wiederholung'] as const;
+		if (!title || !type || !validTypes.includes(type as any) || !date || isNaN(maxPoints) || maxPoints <= 0) {
+			return fail(400, { success: false, message: 'Alle Felder müssen ausgefüllt sein (Typ: Schularbeit, Test oder Wiederholung; Punkte > 0)' });
 		}
 
 		const d = new Date(date);
@@ -126,9 +158,14 @@ export const actions: Actions = {
 
 		if (scaleJson) {
 			try {
-				gradingScale = JSON.parse(scaleJson);
+				const parsed = JSON.parse(scaleJson);
+				const validation = validateScale(parsed);
+				if (validation.valid && validation.normalizedScale) {
+					gradingScale = validation.normalizedScale;
+				}
 			} catch (e) {}
-		} else if (templateId) {
+		}
+		if (!gradingScale && templateId) {
 			const tpl = gradingTemplateRepository.getById(templateId);
 			if (tpl) gradingScale = tpl.scale;
 		}
@@ -136,7 +173,7 @@ export const actions: Actions = {
 		const id = assessmentRepository.create({
 			courseId: params.id,
 			title,
-			type,
+			type: type as 'schularbeit' | 'test' | 'wiederholung',
 			date,
 			maxPoints,
 			gradingScale,
@@ -151,12 +188,28 @@ export const actions: Actions = {
 		const assessmentId = form.get('assessmentId')?.toString();
 		const studentId = form.get('studentId')?.toString();
 		const pointsRaw = form.get('points')?.toString();
-		const points = pointsRaw !== '' && pointsRaw !== undefined ? parseFloat(pointsRaw) : null;
 		const isAbsent = form.get('isAbsent') === 'true';
 		const isMadeUp = form.get('isMadeUp') === 'true';
 		const note = form.get('note')?.toString() || null;
 
-		if (!assessmentId || !studentId) return { success: false };
+		if (!assessmentId || !studentId) return fail(400, { success: false, message: 'Parameter fehlen' });
+
+		let points: number | null = null;
+		if (pointsRaw !== '' && pointsRaw !== undefined) {
+			points = parseFloat(pointsRaw);
+			if (isNaN(points) || points < 0) {
+				return fail(400, { success: false, message: 'Punkte dürfen nicht negativ sein' });
+			}
+			const assessment = sqlite
+				.prepare('SELECT max_points FROM assessments WHERE id = ?')
+				.get(assessmentId) as { max_points: number } | undefined;
+			if (assessment && points > assessment.max_points) {
+				return fail(400, {
+					success: false,
+					message: `Punkte (${points}) dürfen nicht höher sein als Maximalpunkte (${assessment.max_points})`
+				});
+			}
+		}
 
 		assessmentRepository.updateResult(assessmentId, studentId, points, isAbsent, isMadeUp, note);
 		return { success: true };
@@ -167,10 +220,21 @@ export const actions: Actions = {
 		const assessmentId = form.get('assessmentId')?.toString();
 		const scaleJson = form.get('scaleJson')?.toString();
 
-		if (!assessmentId || !scaleJson) return { success: false };
+		if (!assessmentId || !scaleJson) return fail(400, { success: false, message: 'Ungültige Parameter' });
 
-		const scale = JSON.parse(scaleJson);
-		assessmentRepository.updateGradingScale(assessmentId, scale);
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(scaleJson);
+		} catch (e) {
+			return fail(400, { success: false, message: 'Ungültiges Notenstufen-Format' });
+		}
+
+		const validation = validateScale(parsed);
+		if (!validation.valid || !validation.normalizedScale) {
+			return fail(400, { success: false, message: validation.error || 'Ungültige Notenstufen' });
+		}
+
+		assessmentRepository.updateGradingScale(assessmentId, validation.normalizedScale);
 		return { success: true };
 	},
 
@@ -199,8 +263,8 @@ export const actions: Actions = {
 		const maxPoints = parseFloat(form.get('maxPoints')?.toString() || '10');
 		const description = form.get('description')?.toString().trim() || null;
 
-		if (!title || !date || maxPoints <= 0) {
-			return { success: false, message: 'Titel, Datum und Max-Punkte erforderlich' };
+		if (!title || !date || isNaN(maxPoints) || maxPoints <= 0) {
+			return fail(400, { success: false, message: 'Titel, Datum und gültige Max-Punkte (> 0) erforderlich' });
 		}
 
 		observationRepository.create({
@@ -218,10 +282,31 @@ export const actions: Actions = {
 		const form = await request.formData();
 		const observationId = form.get('observationId')?.toString();
 		const studentId = form.get('studentId')?.toString();
-		const points = parseFloat(form.get('points')?.toString() || '0');
+		const pointsRaw = form.get('points')?.toString();
 		const note = form.get('note')?.toString().trim() || null;
 
-		if (!observationId || !studentId) return { success: false };
+		if (!observationId || !studentId) return fail(400, { success: false, message: 'Parameter fehlen' });
+
+		// Empty input removes the score instead of converting to 0
+		if (pointsRaw === null || pointsRaw === undefined || pointsRaw.trim() === '') {
+			observationRepository.deleteScore(observationId, studentId);
+			return { success: true };
+		}
+
+		const points = parseFloat(pointsRaw);
+		if (isNaN(points) || points < 0) {
+			return fail(400, { success: false, message: 'Punkte dürfen nicht negativ sein' });
+		}
+
+		const obs = sqlite
+			.prepare('SELECT max_points FROM observations WHERE id = ?')
+			.get(observationId) as { max_points: number } | undefined;
+		if (obs && points > obs.max_points) {
+			return fail(400, {
+				success: false,
+				message: `Punkte (${points}) dürfen nicht höher sein als Maximalpunkte (${obs.max_points})`
+			});
+		}
 
 		observationRepository.saveScores(observationId, [{ studentId, points, note }]);
 		return { success: true };
@@ -233,9 +318,29 @@ export const actions: Actions = {
 		const reason = form.get('reason')?.toString().trim();
 		const issuedDate = form.get('issuedDate')?.toString() || new Date().toISOString().slice(0, 10);
 		const days = parseInt(form.get('days')?.toString() || '7', 10);
+		const semesterForm = form.get('semester')?.toString();
 
 		if (!studentId || !reason) {
-			return { success: false, message: 'Schüler und Begründung erforderlich' };
+			return fail(400, { success: false, message: 'Schüler und Begründung erforderlich' });
+		}
+
+		let semester: 1 | 2 = 1;
+		if (semesterForm === '1' || semesterForm === '2') {
+			semester = parseInt(semesterForm, 10) as 1 | 2;
+		} else {
+			const sy = sqlite
+				.prepare(
+					`
+				SELECT sy.first_semester_end
+				FROM courses c
+				JOIN school_years sy ON c.school_year_id = sy.id
+				WHERE c.id = ?
+			`
+				)
+				.get(params.id) as { first_semester_end: string } | undefined;
+			if (sy?.first_semester_end && issuedDate > sy.first_semester_end) {
+				semester = 2;
+			}
 		}
 
 		const d = new Date(issuedDate);
@@ -245,7 +350,7 @@ export const actions: Actions = {
 		earlyWarningRepository.create({
 			studentId,
 			courseId: params.id,
-			semester: 1,
+			semester,
 			issuedDate,
 			reason,
 			dueDate

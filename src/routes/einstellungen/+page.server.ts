@@ -7,16 +7,12 @@ import { hash, verify } from '@node-rs/argon2';
 import { generateTotpSecret, verifyTotpToken } from '$lib/server/auth';
 import { seedDatabase } from '$lib/server/db/seed';
 import { gradingTemplateRepository } from '$lib/server/repositories/grading-template.repository';
-import type { GradingThreshold } from '$lib/services/grading';
+import { settingsRepository } from '$lib/server/repositories/settings.repository';
+import { validateScale, type GradingThreshold } from '$lib/services/grading';
 
 export const load: PageServerLoad = async ({ locals }) => {
 	const user = locals.user!;
-
-	const settingsRows = sqlite.prepare('SELECT key, value FROM settings').all() as Array<{
-		key: string;
-		value: string;
-	}>;
-	const settingsMap = new Map(settingsRows.map((s) => [s.key, s.value]));
+	const settings = settingsRepository.getAll();
 
 	const userRow = db.select().from(schema.users).where(eq(schema.users.id, user.id)).get()!;
 
@@ -29,10 +25,10 @@ export const load: PageServerLoad = async ({ locals }) => {
 	return {
 		username: user.username,
 		totpEnabled: userRow.totpEnabled,
-		teacherName: settingsMap.get('teacher_name') || 'Prof. Mag. Bernhard',
-		defaultReturnDays: parseInt(settingsMap.get('default_return_days') || '7', 10),
-		earlyWarningThreshold: parseFloat(settingsMap.get('early_warning_threshold') || '4.5'),
-		emailSummaryEnabled: settingsMap.get('email_summary_enabled') === 'true',
+		teacherName: settings.teacherName,
+		defaultReturnDays: settings.defaultReturnDays,
+		earlyWarningThreshold: settings.earlyWarningThreshold,
+		emailSummaryEnabled: settings.emailSummaryEnabled,
 		pushSubscriptionsCount: subCount,
 		gradingTemplates
 	};
@@ -42,22 +38,16 @@ export const actions: Actions = {
 	updateSettings: async ({ request }) => {
 		const form = await request.formData();
 		const teacherName = form.get('teacherName')?.toString().trim() || '';
-		const defaultReturnDays = form.get('defaultReturnDays')?.toString() || '7';
-		const earlyWarningThreshold = form.get('earlyWarningThreshold')?.toString() || '4.5';
-		const emailSummaryEnabled = form.get('emailSummaryEnabled') ? 'true' : 'false';
+		const defaultReturnDays = parseInt(form.get('defaultReturnDays')?.toString() || '7', 10);
+		const earlyWarningThreshold = parseFloat(form.get('earlyWarningThreshold')?.toString() || '4.5');
+		const emailSummaryEnabled = form.get('emailSummaryEnabled') ? true : false;
 
-		db.insert(schema.settings)
-			.values([
-				{ key: 'teacher_name', value: teacherName },
-				{ key: 'default_return_days', value: defaultReturnDays },
-				{ key: 'early_warning_threshold', value: earlyWarningThreshold },
-				{ key: 'email_summary_enabled', value: emailSummaryEnabled }
-			])
-			.onConflictDoUpdate({
-				target: schema.settings.key,
-				set: { value: sqlite.raw('excluded.value') }
-			})
-			.run();
+		settingsRepository.updateAll({
+			teacherName,
+			defaultReturnDays,
+			earlyWarningThreshold,
+			emailSummaryEnabled
+		});
 
 		return { success: true, message: 'Einstellungen gespeichert!' };
 	},
@@ -132,6 +122,9 @@ export const actions: Actions = {
 	},
 
 	resetFictionalData: async () => {
+		if (process.env.NODE_ENV === 'production') {
+			return fail(403, { resetError: 'Das Zurücksetzen auf Testdaten ist in Produktionsumgebungen gesperrt.' });
+		}
 		await seedDatabase(true);
 		return { resetSuccess: 'Datenbank mit fiktiven Testdaten neu initialisiert!' };
 	},
@@ -148,25 +141,18 @@ export const actions: Actions = {
 			return fail(400, { templateError: 'Name und Notenstufen sind erforderlich.' });
 		}
 
-		let scale: GradingThreshold[];
+		let parsed: unknown;
 		try {
-			scale = JSON.parse(scaleJson);
+			parsed = JSON.parse(scaleJson);
 		} catch (e) {
 			return fail(400, { templateError: 'Ungültiges Notenstufen-Format.' });
 		}
 
-		// Validate thresholds (grade 1 > 2 > 3 > 4 > 5)
-		const p1 = scale.find((s) => s.grade === 1)?.minPercent ?? 0;
-		const p2 = scale.find((s) => s.grade === 2)?.minPercent ?? 0;
-		const p3 = scale.find((s) => s.grade === 3)?.minPercent ?? 0;
-		const p4 = scale.find((s) => s.grade === 4)?.minPercent ?? 0;
-
-		if (!(p1 > p2 && p2 > p3 && p3 > p4 && p4 > 0 && p1 <= 100)) {
-			return fail(400, {
-				templateError:
-					'Die Prozentgrenzen müssen streng absteigend und sinnvoll sein (100% ≥ Note 1 > Note 2 > Note 3 > Note 4 > 0%).'
-			});
+		const validation = validateScale(parsed);
+		if (!validation.valid || !validation.normalizedScale) {
+			return fail(400, { templateError: validation.error || 'Ungültige Notenstufen.' });
 		}
+		const scale = validation.normalizedScale;
 
 		if (id) {
 			gradingTemplateRepository.update(id, { name, description, scale, isDefault });

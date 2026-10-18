@@ -14,7 +14,7 @@
 		MessageSquare
 	} from '@lucide/svelte';
 
-	let { data } = $props<{
+	interface Props {
 		data: {
 			student: any;
 			courseEvaluations: Array<any>;
@@ -22,7 +22,9 @@
 			earlyWarnings: Array<any>;
 			participationHistory: Array<any>;
 		};
-	}>();
+	}
+
+	let { data }: Props = $props();
 
 	let showAddNoteModal = $state(false);
 	let newNoteCategory = $state('elterngespraech');
@@ -276,7 +278,10 @@
 			<form
 				action="?/addNote"
 				method="POST"
-				use:enhance={() => () => (showAddNoteModal = false)}
+				use:enhance={() => async ({ result, update }) => {
+					await update();
+					if (result.type === 'success') showAddNoteModal = false;
+				}}
 				class="space-y-4"
 			>
 				<div>

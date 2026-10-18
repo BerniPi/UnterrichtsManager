@@ -12,90 +12,100 @@ export async function seedDatabase(force = false) {
 		return { message: 'Database already seeded' };
 	}
 
-	if (force) {
-		sqlite.exec(`
-			DELETE FROM reminder_logs;
-			DELETE FROM push_subscriptions;
-			DELETE FROM homework_statuses;
-			DELETE FROM homeworks;
-			DELETE FROM notes;
-			DELETE FROM course_final_grades;
-			DELETE FROM early_warnings;
-			DELETE FROM assessment_returns;
-			DELETE FROM assessment_results;
-			DELETE FROM assessments;
-			DELETE FROM observation_scores;
-			DELETE FROM observations;
-			DELETE FROM participation_entries;
-			DELETE FROM courses;
-			DELETE FROM students;
-			DELETE FROM classes;
-			DELETE FROM school_years;
-			DELETE FROM sessions;
-			DELETE FROM users;
-			DELETE FROM settings;
-			DELETE FROM grading_scale_templates;
-		`);
-	}
+	const adminPassword = process.env.ADMIN_PASSWORD || 'notenmanager123';
+	const passwordHash = await hash(adminPassword);
+	const isProduction = process.env.NODE_ENV === 'production';
 
-	// 1. Create Teacher User
-	const teacherId = crypto.randomUUID();
-	const passwordHash = await hash('notenmanager123');
-	db.insert(schema.users)
-		.values({
-			id: teacherId,
-			username: 'lehrer',
-			passwordHash,
-			totpEnabled: false,
-			createdAt: Date.now()
-		})
-		.run();
+	sqlite.transaction(() => {
+		if (force) {
+			sqlite.exec(`
+				DELETE FROM reminder_logs;
+				DELETE FROM push_subscriptions;
+				DELETE FROM homework_statuses;
+				DELETE FROM homeworks;
+				DELETE FROM notes;
+				DELETE FROM course_final_grades;
+				DELETE FROM early_warnings;
+				DELETE FROM assessment_returns;
+				DELETE FROM assessment_results;
+				DELETE FROM assessments;
+				DELETE FROM observation_scores;
+				DELETE FROM observations;
+				DELETE FROM participation_entries;
+				DELETE FROM courses;
+				DELETE FROM students;
+				DELETE FROM classes;
+				DELETE FROM school_years;
+				DELETE FROM sessions;
+				DELETE FROM users;
+				DELETE FROM settings;
+				DELETE FROM grading_scale_templates;
+			`);
+		}
 
-	// Default settings
-	db.insert(schema.settings)
-		.values([
-			{ key: 'default_return_days', value: '7' },
-			{ key: 'early_warning_threshold', value: '4.5' },
-			{ key: 'email_summary_enabled', value: 'false' },
-			{ key: 'teacher_name', value: 'Prof. Mag. Bernhard' }
-		])
-		.run();
-
-	// Default Grading Scale Templates
-	for (const t of DEFAULT_TEMPLATES) {
-		db.insert(schema.gradingScaleTemplates)
+		// 1. Create Teacher User
+		const teacherId = crypto.randomUUID();
+		db.insert(schema.users)
 			.values({
-				id: t.id,
-				name: t.name,
-				description: t.description || null,
-				scaleJson: JSON.stringify(t.scale),
-				isDefault: t.isDefault,
+				id: teacherId,
+				username: 'lehrer',
+				passwordHash,
+				totpEnabled: false,
 				createdAt: Date.now()
 			})
 			.run();
-	}
 
-	// 2. School Year 2026/27 (Austrian school calendar)
-	const syId = crypto.randomUUID();
-	db.insert(schema.schoolYears)
-		.values({
-			id: syId,
-			name: '2026/27',
-			startDate: '2026-09-07',
-			endDate: '2027-07-02',
-			firstSemesterEnd: '2027-02-05',
-			secondSemesterEnd: '2027-07-02',
-			gradingDeadline1: '2027-01-22',
-			gradingDeadline2: '2027-06-18',
-			earlyWarningDeadline1: '2026-12-15',
-			earlyWarningDeadline2: '2027-05-15',
-			isCurrent: true
-		})
-		.run();
+		// Default settings
+		db.insert(schema.settings)
+			.values([
+				{ key: 'default_return_days', value: '7' },
+				{ key: 'early_warning_threshold', value: '4.5' },
+				{ key: 'email_summary_enabled', value: 'false' },
+				{ key: 'teacher_name', value: 'Prof. Mag. Bernhard' }
+			])
+			.onConflictDoNothing()
+			.run();
 
-	// 3. Classes (3B and 7A)
-	const class3BId = crypto.randomUUID();
-	const class7AId = crypto.randomUUID();
+		// Default Grading Scale Templates
+		for (const t of DEFAULT_TEMPLATES) {
+			db.insert(schema.gradingScaleTemplates)
+				.values({
+					id: t.id,
+					name: t.name,
+					description: t.description || null,
+					scaleJson: JSON.stringify(t.scale),
+					isDefault: t.isDefault,
+					createdAt: Date.now()
+				})
+				.onConflictDoNothing()
+				.run();
+		}
+
+		// 2. School Year 2026/27 (Austrian school calendar)
+		const syId = crypto.randomUUID();
+		db.insert(schema.schoolYears)
+			.values({
+				id: syId,
+				name: '2026/27',
+				startDate: '2026-09-07',
+				endDate: '2027-07-02',
+				firstSemesterEnd: '2027-02-05',
+				secondSemesterEnd: '2027-07-02',
+				gradingDeadline1: '2027-01-22',
+				gradingDeadline2: '2027-06-18',
+				earlyWarningDeadline1: '2026-12-15',
+				earlyWarningDeadline2: '2027-05-15',
+				isCurrent: true
+			})
+			.run();
+
+		if (isProduction) {
+			return;
+		}
+
+		// 3. Classes (3B and 7A)
+		const class3BId = crypto.randomUUID();
+		const class7AId = crypto.randomUUID();
 
 	db.insert(schema.classes)
 		.values([
@@ -393,6 +403,11 @@ export async function seedDatabase(force = false) {
 			}
 		])
 		.run();
+	})();
 
-	return { message: 'Database seeded successfully with fictional data' };
+	return {
+		message: isProduction
+			? 'Database initialized for production (no fictional data)'
+			: 'Database seeded successfully with fictional data'
+	};
 }

@@ -2,7 +2,16 @@ import { db, sqlite } from '../db';
 import * as schema from '../db/schema';
 import { eq } from 'drizzle-orm';
 import crypto from 'node:crypto';
-import type { GradingScaleTemplate, GradingThreshold } from '$lib/services/grading';
+import type { GradingScaleTemplate, GradingThreshold } from '../../services/grading';
+
+function ensureDefault(): void {
+	const has = sqlite.prepare('SELECT 1 FROM grading_scale_templates WHERE is_default = 1').get();
+	if (!has) {
+		sqlite.prepare(
+			'UPDATE grading_scale_templates SET is_default = 1 WHERE id = (SELECT id FROM grading_scale_templates ORDER BY created_at ASC LIMIT 1)'
+		).run();
+	}
+}
 
 export const gradingTemplateRepository = {
 	getAll(): GradingScaleTemplate[] {
@@ -73,24 +82,27 @@ export const gradingTemplateRepository = {
 		scale: GradingThreshold[];
 		isDefault?: boolean;
 	}): string {
-		const id = crypto.randomUUID();
+		return sqlite.transaction(() => {
+			const id = crypto.randomUUID();
 
-		if (data.isDefault) {
-			sqlite.prepare('UPDATE grading_scale_templates SET is_default = 0').run();
-		}
+			if (data.isDefault) {
+				sqlite.prepare('UPDATE grading_scale_templates SET is_default = 0').run();
+			}
 
-		db.insert(schema.gradingScaleTemplates)
-			.values({
-				id,
-				name: data.name,
-				description: data.description || null,
-				scaleJson: JSON.stringify(data.scale),
-				isDefault: Boolean(data.isDefault),
-				createdAt: Date.now()
-			})
-			.run();
+			db.insert(schema.gradingScaleTemplates)
+				.values({
+					id,
+					name: data.name,
+					description: data.description || null,
+					scaleJson: JSON.stringify(data.scale),
+					isDefault: Boolean(data.isDefault),
+					createdAt: Date.now()
+				})
+				.run();
 
-		return id;
+			ensureDefault();
+			return id;
+		})();
 	},
 
 	update(
@@ -102,38 +114,43 @@ export const gradingTemplateRepository = {
 			isDefault?: boolean;
 		}
 	): void {
-		if (data.isDefault) {
-			sqlite.prepare('UPDATE grading_scale_templates SET is_default = 0').run();
-		}
+		sqlite.transaction(() => {
+			if (data.isDefault) {
+				sqlite.prepare('UPDATE grading_scale_templates SET is_default = 0 WHERE id != ?').run(id);
+			}
 
-		db.update(schema.gradingScaleTemplates)
-			.set({
-				name: data.name,
-				description: data.description || null,
-				scaleJson: JSON.stringify(data.scale),
-				isDefault: Boolean(data.isDefault)
-			})
-			.where(eq(schema.gradingScaleTemplates.id, id))
-			.run();
+			db.update(schema.gradingScaleTemplates)
+				.set({
+					name: data.name,
+					description: data.description || null,
+					scaleJson: JSON.stringify(data.scale),
+					isDefault: Boolean(data.isDefault)
+				})
+				.where(eq(schema.gradingScaleTemplates.id, id))
+				.run();
+
+			ensureDefault();
+		})();
 	},
 
 	delete(id: string): void {
-		const target = this.getById(id);
-		db.delete(schema.gradingScaleTemplates)
-			.where(eq(schema.gradingScaleTemplates.id, id))
-			.run();
+		sqlite.transaction(() => {
+			db.delete(schema.gradingScaleTemplates)
+				.where(eq(schema.gradingScaleTemplates.id, id))
+				.run();
 
-		// If the deleted one was default, make the first remaining template default
-		if (target?.isDefault) {
-			const remaining = this.getAll();
-			if (remaining.length > 0) {
-				this.setDefault(remaining[0].id);
-			}
-		}
+			ensureDefault();
+		})();
 	},
 
 	setDefault(id: string): void {
-		sqlite.prepare('UPDATE grading_scale_templates SET is_default = 0').run();
-		sqlite.prepare('UPDATE grading_scale_templates SET is_default = 1 WHERE id = ?').run(id);
+		sqlite.transaction(() => {
+			const target = sqlite.prepare('SELECT id FROM grading_scale_templates WHERE id = ?').get(id);
+			if (!target) throw new Error('Vorlage nicht gefunden');
+
+			sqlite.prepare('UPDATE grading_scale_templates SET is_default = 0').run();
+			sqlite.prepare('UPDATE grading_scale_templates SET is_default = 1 WHERE id = ?').run(id);
+			ensureDefault();
+		})();
 	}
 };

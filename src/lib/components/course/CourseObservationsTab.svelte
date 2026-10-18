@@ -2,13 +2,15 @@
 	import { enhance } from '$app/forms';
 	import { Plus, Eye, CheckCircle2, X } from '@lucide/svelte';
 
+	interface Props {
+		course: any;
+		observations?: Array<any>;
+	}
+
 	let {
 		course,
 		observations = []
-	} = $props<{
-		course: any;
-		observations: Array<any>;
-	}>();
+	}: Props = $props();
 
 	let showCreateModal = $state(false);
 	let activeObsId = $state('');
@@ -152,7 +154,10 @@
 			<form
 				action="?/createObservation"
 				method="POST"
-				use:enhance={() => () => (showCreateModal = false)}
+				use:enhance={() => async ({ result, update }) => {
+					await update();
+					if (result.type === 'success') showCreateModal = false;
+				}}
 				class="space-y-4"
 			>
 				<div>

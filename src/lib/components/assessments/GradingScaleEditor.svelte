@@ -3,15 +3,17 @@
 	import { DEFAULT_AUSTRIAN_SCALE, DEFAULT_TEMPLATES, getGradeIntervals } from '$lib/services/grading';
 	import { RotateCcw, Sliders, Check } from '@lucide/svelte';
 
+	interface Props {
+		scale?: GradingThreshold[];
+		maxPoints?: number;
+		templates?: Array<GradingScaleTemplate>;
+	}
+
 	let {
 		scale = $bindable(DEFAULT_AUSTRIAN_SCALE),
 		maxPoints = 48,
 		templates = []
-	} = $props<{
-		scale: GradingThreshold[];
-		maxPoints: number;
-		templates?: Array<GradingScaleTemplate>;
-	}>();
+	}: Props = $props();
 
 	let inputMode = $state<'percent' | 'points'>('percent');
 

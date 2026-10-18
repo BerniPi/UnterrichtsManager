@@ -89,11 +89,11 @@ export const actions: Actions = {
 		// Available headers
 		const headers = Object.keys(rows[0]);
 
-		// Guess column mapping
-		let firstNameCol = headers.find((h) => /vorname|rufname|first/i.test(h)) || '';
-		let lastNameCol = headers.find((h) => /nachname|familienname|last|name/i.test(h)) || '';
-		let idCol = headers.find((h) => /webuntis|schuelernummer|id|nr/i.test(h)) || '';
-		let catCol = headers.find((h) => /katalog|kat/i.test(h)) || '';
+		// Guess column mapping accurately (avoiding matching Vorname as Nachname or Katalog-Nr as ID)
+		let firstNameCol = headers.find((h) => /(?:^|[\s_-])(vorname|rufname|first(?:_?name)?)(?:$|[\s_-])/i.test(h)) || '';
+		let lastNameCol = headers.find((h) => !/vorname/i.test(h) && /(?:^|[\s_-])(nachname|familienname|zuname|surname|last(?:_?name)?|name)(?:$|[\s_-])/i.test(h)) || '';
+		let catCol = headers.find((h) => /katalog|kat(?:_?nr|\.?)/i.test(h)) || '';
+		let idCol = headers.find((h) => !/katalog|kat/i.test(h) && /(?:webuntis|schueler(?:_?id|_?nummer|nr)|student_?id|untis_?id|^id$)/i.test(h)) || '';
 
 		return {
 			success: true,

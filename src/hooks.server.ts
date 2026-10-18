@@ -1,4 +1,4 @@
-import type { Handle } from '@sveltejs/kit';
+import type { Handle } from '@sveltejs/kit/hooks';
 import { validateSessionToken, SESSION_COOKIE_NAME } from '$lib/server/auth';
 import { seedDatabase } from '$lib/server/db/seed';
 
@@ -34,7 +34,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 		});
 	}
 
-	if (event.locals.user && url === '/login') {
+	if (event.locals.user && url === '/login' && event.request.method === 'GET') {
 		return new Response(null, {
 			status: 303,
 			headers: { Location: '/' }

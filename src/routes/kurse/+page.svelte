@@ -12,13 +12,15 @@
 		Sliders
 	} from '@lucide/svelte';
 
-	let { data } = $props<{
+	interface Props {
 		data: {
 			currentSchoolYear: any;
 			courses: Array<any>;
 			classes: Array<any>;
 		};
-	}>();
+	}
+
+	let { data }: Props = $props();
 
 	let showCreateModal = $state(false);
 	let selectedClassId = $state('');
@@ -150,7 +152,10 @@
 			<form
 				action="?/createCourse"
 				method="POST"
-				use:enhance={() => () => (showCreateModal = false)}
+				use:enhance={() => async ({ result, update }) => {
+					await update();
+					if (result.type === 'success') showCreateModal = false;
+				}}
 				class="space-y-4"
 			>
 				<input type="hidden" name="schoolYearId" value={data.currentSchoolYear?.id} />

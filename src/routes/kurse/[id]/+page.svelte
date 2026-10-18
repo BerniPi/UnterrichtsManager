@@ -19,7 +19,7 @@
 	import CourseEarlyWarningsTab from '$lib/components/course/CourseEarlyWarningsTab.svelte';
 	import CourseWeightsTab from '$lib/components/course/CourseWeightsTab.svelte';
 
-	let { data } = $props<{
+	interface Props {
 		data: {
 			course: any;
 			activeTab: string;
@@ -30,8 +30,11 @@
 			homeworks: Array<any>;
 			earlyWarnings: Array<any>;
 			gradingTemplates?: Array<any>;
+			defaultReturnDays?: number;
 		};
-	}>();
+	}
+
+	let { data }: Props = $props();
 
 	const tabs = [
 		{ id: 'noten', label: 'Noten & Vorschlag', icon: FileSpreadsheet },
@@ -107,6 +110,7 @@
 				assessments={data.assessments}
 				selectedAssessment={data.selectedAssessment}
 				gradingTemplates={data.gradingTemplates || []}
+				defaultReturnDays={data.defaultReturnDays ?? 7}
 			/>
 		{:else if data.activeTab === 'beobachtungen'}
 			<CourseObservationsTab course={data.course} observations={data.observations} />

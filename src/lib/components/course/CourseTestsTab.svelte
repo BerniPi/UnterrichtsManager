@@ -24,17 +24,21 @@
 		Sparkles
 	} from '@lucide/svelte';
 
+	interface Props {
+		course: any;
+		assessments?: Array<any>;
+		selectedAssessment?: any;
+		gradingTemplates?: Array<GradingScaleTemplate>;
+		defaultReturnDays?: number;
+	}
+
 	let {
 		course,
 		assessments = [],
 		selectedAssessment = null,
-		gradingTemplates = []
-	} = $props<{
-		course: any;
-		assessments: Array<any>;
-		selectedAssessment: any;
-		gradingTemplates?: Array<GradingScaleTemplate>;
-	}>();
+		gradingTemplates = [],
+		defaultReturnDays = 7
+	}: Props = $props();
 
 	let showCreateModal = $state(false);
 	let showScaleModal = $state(false);
@@ -45,19 +49,28 @@
 	let newDate = $state(new Date().toISOString().slice(0, 10));
 	let newMaxPoints = $state(48);
 	let newReturnDays = $state(7);
+	$effect(() => {
+		newReturnDays = defaultReturnDays;
+	});
 	let selectedTemplateId = $state<string>('');
 
-	// Select default template when modal opens or templates load
-	$effect(() => {
-		if (!selectedTemplateId && gradingTemplates.length > 0) {
-			const def = gradingTemplates.find((t) => t.isDefault) || gradingTemplates[0];
-			selectedTemplateId = def.id;
-		}
-	});
+	const defaultTemplateId = $derived(
+		gradingTemplates.find((t) => t.isDefault)?.id || gradingTemplates[0]?.id || ''
+	);
+	const effectiveTemplateId = $derived(selectedTemplateId || defaultTemplateId);
 
 	const activeTemplate = $derived(
-		gradingTemplates.find((t) => t.id === selectedTemplateId) || gradingTemplates[0] || null
+		gradingTemplates.find((t) => t.id === effectiveTemplateId) || gradingTemplates[0] || null
 	);
+
+	let editingScale = $state<GradingThreshold[]>([]);
+
+	function toggleScaleModal() {
+		if (!showScaleModal && selectedAssessment?.scale) {
+			editingScale = structuredClone(selectedAssessment.scale);
+		}
+		showScaleModal = !showScaleModal;
+	}
 
 	const templateScale = $derived<GradingThreshold[]>(
 		activeTemplate ? activeTemplate.scale : DEFAULT_AUSTRIAN_SCALE
@@ -198,7 +211,7 @@
 
 					<button
 						type="button"
-						onclick={() => (showScaleModal = !showScaleModal)}
+						onclick={toggleScaleModal}
 						class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700 text-xs font-semibold flex items-center space-x-1.5 transition"
 						title="Notenschlüssel bearbeiten"
 					>
@@ -239,18 +252,20 @@
 					action="?/updateGradingScale"
 					method="POST"
 					use:enhance={() => {
-						return async ({ update }) => {
-							showScaleModal = false;
-							showToast('Notenschlüssel aktualisiert und alle Noten neu berechnet!');
+						return async ({ result, update }) => {
 							await update();
+							if (result.type === 'success') {
+								showScaleModal = false;
+								showToast('Notenschlüssel aktualisiert und alle Noten neu berechnet!');
+							}
 						};
 					}}
 					class="p-4 bg-slate-900 border border-blue-800/80 rounded-2xl space-y-3"
 				>
 					<input type="hidden" name="assessmentId" value={selectedAssessment.id} />
-					<input type="hidden" name="scaleJson" value={JSON.stringify(selectedAssessment.scale)} />
+					<input type="hidden" name="scaleJson" value={JSON.stringify(editingScale)} />
 
-					<GradingScaleEditor bind:scale={selectedAssessment.scale} maxPoints={selectedAssessment.maxPoints} templates={gradingTemplates} />
+					<GradingScaleEditor bind:scale={editingScale} maxPoints={selectedAssessment.maxPoints} templates={gradingTemplates} />
 
 					<div class="flex justify-end space-x-2">
 						<button
@@ -491,7 +506,10 @@
 			<form
 				action="?/createAssessment"
 				method="POST"
-				use:enhance={() => () => (showCreateModal = false)}
+				use:enhance={() => async ({ result, update }) => {
+					await update();
+					if (result.type === 'success') showCreateModal = false;
+				}}
 				class="space-y-4"
 			>
 				<div>

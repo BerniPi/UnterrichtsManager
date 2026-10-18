@@ -14,7 +14,7 @@
 	} from '@lucide/svelte';
 	import GradingTemplatesManager from '$lib/components/assessments/GradingTemplatesManager.svelte';
 
-	let { data, form } = $props<{
+	interface Props {
 		data: {
 			username: string;
 			totpEnabled: boolean;
@@ -26,7 +26,9 @@
 			gradingTemplates: Array<any>;
 		};
 		form?: any;
-	}>();
+	}
+
+	let { data, form }: Props = $props();
 
 	let pushRegistered = $state(false);
 	let pushError = $state<string | null>(null);
@@ -92,6 +94,13 @@
 		<div class="p-3 bg-emerald-950/90 border border-emerald-800 text-emerald-200 text-xs rounded-xl flex items-center space-x-2">
 			<CheckCircle2 class="w-4 h-4 text-emerald-400 shrink-0" />
 			<span>{form.message || form.passwordSuccess || form.totpEnabledSuccess || form.resetSuccess}</span>
+		</div>
+	{/if}
+
+	{#if form?.resetError || form?.passwordError || form?.totpError || form?.templateError}
+		<div class="p-3 bg-red-950/90 border border-red-800 text-red-200 text-xs rounded-xl flex items-center space-x-2">
+			<AlertTriangle class="w-4 h-4 text-red-400 shrink-0" />
+			<span>{form.resetError || form.passwordError || form.totpError || form.templateError}</span>
 		</div>
 	{/if}
 

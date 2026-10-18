@@ -1,4 +1,4 @@
-import { sqlite } from '$lib/server/db';
+import { sqlite } from '../server/db';
 import {
 	calculateGradeSuggestion,
 	type CourseWeights,
@@ -112,7 +112,7 @@ export function evaluateStudentInCourse(
 	// 6. Manual Final Grade
 	const finalGradeRow = sqlite
 		.prepare(
-			'SELECT manual_grade, note FROM course_final_grades WHERE course_id = ? AND student_id = ?'
+			'SELECT manual_grade, note FROM course_final_grades WHERE course_id = ? AND student_id = ? ORDER BY semester DESC LIMIT 1'
 		)
 		.get(courseId, studentId) as { manual_grade: number | null; note: string | null } | undefined;
 
@@ -134,12 +134,49 @@ export function evaluateStudentInCourse(
 
 	const breakdown = calculateGradeSuggestion(performance, weights);
 
+	const schoolYear = sqlite
+		.prepare(
+			`
+		SELECT sy.first_semester_end, sy.early_warning_deadline_1, sy.early_warning_deadline_2
+		FROM courses c
+		JOIN school_years sy ON c.school_year_id = sy.id
+		WHERE c.id = ?
+	`
+		)
+		.get(courseId) as
+		| {
+				first_semester_end: string;
+				early_warning_deadline_1: string;
+				early_warning_deadline_2: string;
+		  }
+		| undefined;
+
+	const activeSchoolYear =
+		schoolYear ||
+		(sqlite
+			.prepare(
+				`
+		SELECT first_semester_end, early_warning_deadline_1, early_warning_deadline_2
+		FROM school_years
+		WHERE is_current = 1
+		LIMIT 1
+	`
+			)
+			.get() as
+			| {
+					first_semester_end: string;
+					early_warning_deadline_1: string;
+					early_warning_deadline_2: string;
+			  }
+			| undefined);
+
 	const todayStr = new Date().toISOString().slice(0, 10);
+	const currentYear = new Date().getFullYear();
 	const earlyWarningSuggestion = checkEarlyWarningSuggestion(breakdown, performance, {
 		currentDateStr: todayStr,
-		earlyWarningDeadline1: '2026-12-15',
-		earlyWarningDeadline2: '2027-05-15',
-		firstSemesterEnd: '2027-02-05',
+		earlyWarningDeadline1: activeSchoolYear?.early_warning_deadline_1 || `${currentYear}-12-15`,
+		earlyWarningDeadline2: activeSchoolYear?.early_warning_deadline_2 || `${currentYear + 1}-05-15`,
+		firstSemesterEnd: activeSchoolYear?.first_semester_end || `${currentYear + 1}-02-05`,
 		threshold: earlyWarningThreshold
 	});
 

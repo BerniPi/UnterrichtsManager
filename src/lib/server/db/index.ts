@@ -229,6 +229,35 @@ export function initDb() {
 			is_default INTEGER NOT NULL DEFAULT 0,
 			created_at INTEGER NOT NULL
 		);
+
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_grading_scale_templates_default 
+		ON grading_scale_templates(is_default) WHERE is_default = 1;
+
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_course_final_grades_unique 
+		ON course_final_grades(course_id, student_id, semester);
+
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_assessment_results_unique
+		ON assessment_results(assessment_id, student_id);
+
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_assessment_returns_unique
+		ON assessment_returns(assessment_id, student_id);
+
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_homework_statuses_unique
+		ON homework_statuses(homework_id, student_id);
+
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_observation_scores_unique
+		ON observation_scores(observation_id, student_id);
+
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_participation_entries_unique
+		ON participation_entries(course_id, student_id, year, week_number);
+
+		CREATE INDEX IF NOT EXISTS idx_students_class ON students(class_id);
+		CREATE INDEX IF NOT EXISTS idx_courses_class ON courses(class_id);
+		CREATE INDEX IF NOT EXISTS idx_courses_school_year ON courses(school_year_id);
+		CREATE INDEX IF NOT EXISTS idx_assessments_course ON assessments(course_id);
+		CREATE INDEX IF NOT EXISTS idx_homeworks_course ON homeworks(course_id);
+		CREATE INDEX IF NOT EXISTS idx_observations_course ON observations(course_id);
+		CREATE INDEX IF NOT EXISTS idx_early_warnings_course ON early_warnings(course_id);
 	`);
 
 	// Auto-seed default templates if none exist
@@ -239,7 +268,7 @@ export function initDb() {
 
 		if (!countRow || countRow.count === 0) {
 			const insertStmt = sqlite.prepare(`
-				INSERT INTO grading_scale_templates (id, name, description, scale_json, is_default, created_at)
+				INSERT OR IGNORE INTO grading_scale_templates (id, name, description, scale_json, is_default, created_at)
 				VALUES (?, ?, ?, ?, ?, ?)
 			`);
 

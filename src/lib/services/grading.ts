@@ -24,7 +24,7 @@ export const DEFAULT_TEMPLATES: Array<Omit<GradingScaleTemplate, 'createdAt'>> =
 	{
 		id: 'austrian-standard',
 		name: 'Österreich Standard (88 / 75 / 60 / 50 %)',
-		description: 'Klassischer Notenschlüssel nach LBVO für Schularbeiten und Tests',
+		description: 'Bewährter Notenschlüssel (z.B. Vereinbarung der Fachgruppe gem. LBVO § 14)',
 		scale: [
 			{ grade: 1, minPercent: 88 },
 			{ grade: 2, minPercent: 75 },
@@ -83,6 +83,8 @@ export const GRADE_LABELS: Record<number, string> = {
 	5: 'Nicht genügend'
 };
 
+const EPS = 1e-9;
+
 /**
  * Calculates grade (1-5) from achieved points and max points based on threshold scale.
  */
@@ -100,9 +102,8 @@ export function calculateGradeFromPoints(
 	const sorted = [...scale].sort((a, b) => b.minPercent - a.minPercent);
 
 	for (const threshold of sorted) {
-		// Round percent to 1 decimal place to avoid floating point precision issues (e.g. 49.999999%)
-		const roundedPercent = Math.round(percent * 10) / 10;
-		if (roundedPercent >= threshold.minPercent) {
+		// Nur Float-Rauschen tolerieren, nie echte Werte unter der Grenze aufrunden
+		if (percent + EPS >= threshold.minPercent) {
 			return threshold.grade;
 		}
 	}
@@ -115,6 +116,43 @@ export function calculateGradeFromPoints(
  */
 export function percentToGrade(percent: number): number {
 	return calculateGradeFromPoints(percent, 100, DEFAULT_AUSTRIAN_SCALE) ?? 5;
+}
+
+/**
+ * Validates grading scale thresholds and returns normalized 5-step scale if valid.
+ */
+export function validateScale(scale: unknown): {
+	valid: boolean;
+	error?: string;
+	normalizedScale?: GradingThreshold[];
+} {
+	if (!Array.isArray(scale)) {
+		return { valid: false, error: 'Ungültiges Notenstufen-Format.' };
+	}
+
+	const p1 = Number(scale.find((s) => s?.grade === 1)?.minPercent ?? 0);
+	const p2 = Number(scale.find((s) => s?.grade === 2)?.minPercent ?? 0);
+	const p3 = Number(scale.find((s) => s?.grade === 3)?.minPercent ?? 0);
+	const p4 = Number(scale.find((s) => s?.grade === 4)?.minPercent ?? 0);
+
+	if (!(p1 > p2 && p2 > p3 && p3 > p4 && p4 > 0 && p1 <= 100)) {
+		return {
+			valid: false,
+			error:
+				'Die Prozentgrenzen müssen streng absteigend und sinnvoll sein (100% ≥ Note 1 > Note 2 > Note 3 > Note 4 > 0%).'
+		};
+	}
+
+	return {
+		valid: true,
+		normalizedScale: [
+			{ grade: 1, minPercent: p1 },
+			{ grade: 2, minPercent: p2 },
+			{ grade: 3, minPercent: p3 },
+			{ grade: 4, minPercent: p4 },
+			{ grade: 5, minPercent: 0 }
+		]
+	};
 }
 
 export interface GradeInterval {
@@ -130,35 +168,43 @@ export interface GradeInterval {
  */
 export function getGradeIntervals(
 	maxPoints: number,
-	scale: GradingThreshold[] = DEFAULT_AUSTRIAN_SCALE
+	scale: GradingThreshold[] = DEFAULT_AUSTRIAN_SCALE,
+	step: number = 0.5
 ): GradeInterval[] {
 	const sorted = [...scale].sort((a, b) => a.grade - b.grade); // 1, 2, 3, 4, 5
+	const EPS = 1e-9;
 
-	return sorted.map((th) => {
-		const minPoints = Math.round(((maxPoints * th.minPercent) / 100) * 10) / 10;
+	const intervals = sorted.map((th) => {
+		// Kleinste erreichbare Punktzahl bei Halbpunkte-Raster (Schritt konfigurierbar)
+		const minPoints =
+			th.minPercent <= 0
+				? 0
+				: Math.ceil((maxPoints * th.minPercent) / 100 / step - EPS) * step;
 		const label = GRADE_LABELS[th.grade] || `Note ${th.grade}`;
-
-		let description = '';
-		if (th.grade === 1) {
-			description = `ab ${minPoints.toFixed(1)} Pkt. (≥ ${th.minPercent}%)`;
-		} else if (th.grade === 5) {
-			const grade4Threshold = sorted.find((s) => s.grade === 4);
-			const cutoff = grade4Threshold
-				? Math.round(((maxPoints * grade4Threshold.minPercent) / 100) * 10) / 10
-				: minPoints;
-			description = `< ${cutoff.toFixed(1)} Pkt. (< ${grade4Threshold?.minPercent ?? 50}%)`;
-		} else {
-			description = `ab ${minPoints.toFixed(1)} Pkt. (≥ ${th.minPercent}%)`;
-		}
 
 		return {
 			grade: th.grade,
 			label,
 			minPercent: th.minPercent,
 			minPoints,
-			description
+			description: ''
 		};
 	});
+
+	const grade4 = intervals.find((i) => i.grade === 4);
+	const grade4Threshold = sorted.find((s) => s.grade === 4);
+
+	for (const item of intervals) {
+		const formattedPoints = item.minPoints % 1 === 0 ? item.minPoints.toFixed(0) : item.minPoints.toFixed(1);
+		if (item.grade === 5) {
+			const cutoffPoints = grade4 ? (grade4.minPoints % 1 === 0 ? grade4.minPoints.toFixed(0) : grade4.minPoints.toFixed(1)) : '0';
+			item.description = `< ${cutoffPoints} Pkt. (< ${grade4Threshold?.minPercent ?? 50}%)`;
+		} else {
+			item.description = `ab ${formattedPoints} Pkt. (≥ ${item.minPercent}%)`;
+		}
+	}
+
+	return intervals;
 }
 
 export interface CourseWeights {
@@ -183,8 +229,10 @@ export interface GradeSuggestionBreakdown {
 	participationScore: number | null;
 	observationsScore: number | null;
 	homeworkScore: number | null;
+	rawAverage: number | null;
 	calculatedAverage: number | null;
 	suggestedGrade: number | null;
+	activeWeight: number;
 	weightsUsed: {
 		schularbeiten: number;
 		tests: number;
@@ -306,8 +354,10 @@ export function calculateGradeSuggestion(
 			participationScore: partScore,
 			observationsScore: obsScore,
 			homeworkScore: hwScore,
+			rawAverage: null,
 			calculatedAverage: null,
 			suggestedGrade: null,
+			activeWeight: 0,
 			weightsUsed: {
 				schularbeiten: weights.weightSchularbeiten,
 				tests: weights.weightTests,
@@ -318,8 +368,9 @@ export function calculateGradeSuggestion(
 		};
 	}
 
-	const calculatedAverage = Math.round((weightedSum / activeWeight) * 100) / 100;
-	const suggestedGrade = Math.max(1, Math.min(5, Math.round(calculatedAverage)));
+	const rawAverage = weightedSum / activeWeight;
+	const calculatedAverage = Math.round(rawAverage * 100) / 100;
+	const suggestedGrade = Math.max(1, Math.min(5, Math.round(rawAverage)));
 
 	return {
 		schularbeitenAverage: saAvg ? Math.round(saAvg * 100) / 100 : null,
@@ -327,8 +378,10 @@ export function calculateGradeSuggestion(
 		participationScore: partScore,
 		observationsScore: obsScore,
 		homeworkScore: hwScore,
+		rawAverage,
 		calculatedAverage,
 		suggestedGrade,
+		activeWeight,
 		weightsUsed: {
 			schularbeiten: weights.weightSchularbeiten,
 			tests: weights.weightTests,

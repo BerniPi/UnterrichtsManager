@@ -17,7 +17,7 @@
 		BookOpen
 	} from '@lucide/svelte';
 
-	let { data } = $props<{
+	interface Props {
 		data: {
 			courses: Array<any>;
 			selectedCourse: any;
@@ -26,7 +26,9 @@
 			activeHomework: any;
 			studentsWithDetails: Array<any>;
 		};
-	}>();
+	}
+
+	let { data }: Props = $props();
 
 	let filterMode = $state<'all' | 'missing' | 'overdue'>('all');
 	let noteModalStudent = $state<any | null>(null);
@@ -202,7 +204,10 @@
 
 									<div class="flex items-center gap-1.5">
 										<!-- Mark signed -->
-										<form action="?/markSigned" method="POST" use:enhance={() => () => showToast('Unterschrift als zurück markiert!')}>
+										<form action="?/markSigned" method="POST" use:enhance={() => async ({ update }) => {
+											await update();
+											showToast('Unterschrift als zurück markiert!');
+										}}>
 											<input type="hidden" name="type" value={item.type} />
 											<input type="hidden" name="id" value={item.id} />
 											<button
@@ -215,7 +220,10 @@
 										</form>
 
 										<!-- Asked button -->
-										<form action="?/recordAsked" method="POST" use:enhance={() => () => showToast('Nachfrage protokolliert!')}>
+										<form action="?/recordAsked" method="POST" use:enhance={() => async ({ update }) => {
+											await update();
+											showToast('Nachfrage protokolliert!');
+										}}>
 											<input type="hidden" name="type" value={item.type} />
 											<input type="hidden" name="id" value={item.id} />
 											<button
@@ -228,7 +236,10 @@
 										</form>
 
 										<!-- Snooze -->
-										<form action="?/snooze" method="POST" use:enhance={() => () => showToast('Erinnerung um 3 Tage verschoben.')}>
+										<form action="?/snooze" method="POST" use:enhance={() => async ({ update }) => {
+											await update();
+											showToast('Erinnerung um 3 Tage verschoben.');
+										}}>
 											<input type="hidden" name="type" value={item.type} />
 											<input type="hidden" name="id" value={item.id} />
 											<input type="hidden" name="days" value="3" />

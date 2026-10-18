@@ -11,13 +11,15 @@
 		X
 	} from '@lucide/svelte';
 
-	let { data } = $props<{
+	interface Props {
 		data: {
 			cls: any;
 			students: Array<any>;
 			courses: Array<any>;
 		};
-	}>();
+	}
+
+	let { data }: Props = $props();
 
 	let showAddModal = $state(false);
 	let filterActive = $state(true);
@@ -169,7 +171,10 @@
 			<form
 				action="?/addStudent"
 				method="POST"
-				use:enhance={() => () => (showAddModal = false)}
+				use:enhance={() => async ({ result, update }) => {
+					await update();
+					if (result.type === 'success') showAddModal = false;
+				}}
 				class="space-y-4"
 			>
 				<div>

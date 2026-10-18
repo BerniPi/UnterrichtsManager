@@ -1,6 +1,7 @@
 import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { courseRepository } from '$lib/server/repositories/course.repository';
+import { settingsRepository } from '$lib/server/repositories/settings.repository';
 import { evaluateCourseStudents } from '$lib/services/student-evaluator';
 import { generateWebUntisExcel, generateWebUntisCsv } from '$lib/services/export/webuntis';
 
@@ -25,7 +26,8 @@ export const GET: RequestHandler = async ({ url }) => {
 		weightHomework: course.weightHomework
 	};
 
-	const evaluatedStudents = evaluateCourseStudents(courseId, weights);
+	const threshold = settingsRepository.get('earlyWarningThreshold');
+	const evaluatedStudents = evaluateCourseStudents(courseId, weights, threshold);
 
 	const exportRows = evaluatedStudents.map((s) => ({
 		lastName: s.lastName,
@@ -50,7 +52,7 @@ export const GET: RequestHandler = async ({ url }) => {
 	}
 
 	const excelBuffer = generateWebUntisExcel(exportRows, `${course.className} ${course.subject}`);
-	return new Response(excelBuffer, {
+	return new Response(new Uint8Array(excelBuffer), {
 		headers: {
 			'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
 			'Content-Disposition': `attachment; filename="${sanitizedFilename}.xlsx"`

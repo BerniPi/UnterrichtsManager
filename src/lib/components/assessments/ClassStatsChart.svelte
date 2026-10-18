@@ -1,13 +1,15 @@
 <script lang="ts">
-	let {
-		results = []
-	} = $props<{
-		results: Array<{
+	import { AlertTriangle } from '@lucide/svelte';
+
+	interface Props {
+		results?: Array<{
 			grade: number | null;
 			points: number | null;
 			isAbsent?: boolean;
 		}>;
-	}>();
+	}
+
+	let { results = [] }: Props = $props();
 
 	const validResults = $derived(
 		results.filter((r: any) => r.grade !== null && !r.isAbsent)
@@ -89,4 +91,17 @@
 			</div>
 		{/each}
 	</div>
+
+	{#if validResults.length > 0 && gradeCounts()[5] / validResults.length > 0.5}
+		<div class="p-3 bg-red-950/70 border border-red-800 text-red-200 text-xs rounded-xl flex items-start space-x-2">
+			<AlertTriangle class="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+			<div>
+				<span class="font-bold">Hinweis gem. § 7 Abs. 1 LBVO:</span>
+				<span class="ml-1">
+					Mehr als die Hälfte der Schüler ({gradeCounts()[5]} von {validResults.length}, {Math.round((gradeCounts()[5] / validResults.length) * 100)}%) wurde mit „Nicht genügend“ beurteilt.
+					Die Schularbeit ist mit Zustimmung der Schulleitung einmal zu wiederholen.
+				</span>
+			</div>
+		</div>
+	{/if}
 </div>

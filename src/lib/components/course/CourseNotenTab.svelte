@@ -10,13 +10,15 @@
 		Info
 	} from '@lucide/svelte';
 
+	interface Props {
+		course: any;
+		students?: StudentCourseEvaluation[];
+	}
+
 	let {
 		course,
 		students = []
-	} = $props<{
-		course: any;
-		students: StudentCourseEvaluation[];
-	}>();
+	}: Props = $props();
 
 	let selectedStudentBreakdown = $state<StudentCourseEvaluation | null>(null);
 	let saveToast = $state<string | null>(null);
@@ -145,6 +147,8 @@
 								<span class="inline-flex items-center justify-center w-7 h-7 rounded-lg font-extrabold text-sm shadow {s.breakdown.suggestedGrade === 1 ? 'bg-emerald-600 text-white' : s.breakdown.suggestedGrade === 5 ? 'bg-red-600 text-white' : 'bg-blue-600 text-white'}">
 									{s.breakdown.suggestedGrade}
 								</span>
+							{:else if s.breakdown.activeWeight === 0}
+								<span class="text-[11px] text-amber-400 font-medium" title="Alle gewichteten Teilleistungen haben ein Gewicht von 0%">Kein Vorschlag (Gewichte = 0)</span>
 							{:else}
 								<span class="text-slate-500">–</span>
 							{/if}
@@ -165,6 +169,7 @@
 							>
 								<input type="hidden" name="studentId" value={s.studentId} />
 								<input type="hidden" name="suggestedGrade" value={s.breakdown.suggestedGrade ?? ''} />
+								<input type="hidden" name="semester" value={s.earlyWarningSuggestion.suggestedSemester ?? '1'} />
 
 								<select
 									name="manualGrade"

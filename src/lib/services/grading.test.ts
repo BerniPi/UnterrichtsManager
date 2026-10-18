@@ -103,37 +103,37 @@ describe('Austrian Grading Logic', () => {
 	});
 
 	it('computes correct point intervals for Schularbeiten (48 Pkt.) and Tests (24 Pkt.)', () => {
-		// 1. Schularbeit (48 Max-Punkte)
+		// 1. Schularbeit (48 Max-Punkte) with step 0.5
 		const intervals48 = getGradeIntervals(48, DEFAULT_AUSTRIAN_SCALE);
 		expect(intervals48.length).toBe(5);
 
-		// Grade 1: 88% of 48 = 42.24 -> 42.2 Pkt.
+		// Grade 1: 88% of 48 = 42.24 -> 42.5 Pkt. with half-point raster
 		expect(intervals48[0].grade).toBe(1);
-		expect(intervals48[0].minPoints).toBe(42.2);
+		expect(intervals48[0].minPoints).toBe(42.5);
 
 		// Grade 2: 75% of 48 = 36.0 Pkt.
 		expect(intervals48[1].grade).toBe(2);
 		expect(intervals48[1].minPoints).toBe(36.0);
 
-		// Grade 3: 60% of 48 = 28.8 Pkt.
+		// Grade 3: 60% of 48 = 28.8 -> 29.0 Pkt. with half-point raster
 		expect(intervals48[2].grade).toBe(3);
-		expect(intervals48[2].minPoints).toBe(28.8);
+		expect(intervals48[2].minPoints).toBe(29.0);
 
 		// Grade 4: 50% of 48 = 24.0 Pkt.
 		expect(intervals48[3].grade).toBe(4);
 		expect(intervals48[3].minPoints).toBe(24.0);
 
-		// Grade 5: < 24.0 Pkt.
+		// Grade 5: < 24 Pkt.
 		expect(intervals48[4].grade).toBe(5);
-		expect(intervals48[4].description).toContain('24.0 Pkt.');
+		expect(intervals48[4].description).toContain('24 Pkt.');
 
 		// 2. Kurztest (24 Max-Punkte)
 		const intervals24 = getGradeIntervals(24, DEFAULT_AUSTRIAN_SCALE);
-		expect(intervals24[0].minPoints).toBe(21.1); // 88% of 24
-		expect(intervals24[1].minPoints).toBe(18.0); // 75% of 24
-		expect(intervals24[2].minPoints).toBe(14.4); // 60% of 24
-		expect(intervals24[3].minPoints).toBe(12.0); // 50% of 24
-		expect(intervals24[4].description).toContain('12.0 Pkt.');
+		expect(intervals24[0].minPoints).toBe(21.5); // 88% of 24 = 21.12 -> 21.5
+		expect(intervals24[1].minPoints).toBe(18.0); // 75% of 24 = 18.0
+		expect(intervals24[2].minPoints).toBe(14.5); // 60% of 24 = 14.4 -> 14.5
+		expect(intervals24[3].minPoints).toBe(12.0); // 50% of 24 = 12.0
+		expect(intervals24[4].description).toContain('12 Pkt.');
 
 		// Verify points -> grade matching
 		expect(calculateGradeFromPoints(45, 48)).toBe(1);
@@ -148,6 +148,56 @@ describe('Austrian Grading Logic', () => {
 		expect(calculateGradeFromPoints(15, 24)).toBe(3);
 		expect(calculateGradeFromPoints(12, 24)).toBe(4);
 		expect(calculateGradeFromPoints(11.5, 24)).toBe(5);
+	});
+
+	it('regression 1.5: does not round up scores just below grade boundaries', () => {
+		// 49.96% of 100 must be Grade 5 (< 50% is Nicht genügend)
+		expect(calculateGradeFromPoints(49.96, 100)).toBe(5);
+		// 87.96% of 100 must be Grade 2 (< 88% is Gut)
+		expect(calculateGradeFromPoints(87.96, 100)).toBe(2);
+
+		// Interval minimum points for 43 max points:
+		// 88% of 43 = 37.84. In 0.5 step raster, 37.5 is 87.2% (<88%), so minPoints must be 38.0!
+		const intervals43 = getGradeIntervals(43, DEFAULT_AUSTRIAN_SCALE);
+		expect(intervals43[0].minPoints).toBe(38);
+	});
+
+	it('regression 1.6: avoids double-rounding for grade suggestion', () => {
+		// E.g., raw average of 4.496 should give suggestedGrade 4 (not rounded to 4.50 then 5)
+		const weights: CourseWeights = {
+			weightSchularbeiten: 100,
+			weightTests: 0,
+			weightParticipation: 0,
+			weightObservations: 0,
+			weightHomework: 0
+		};
+		// Create a situation where weighted average is 4.496
+		// E.g., 4.496 can be achieved with grades [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 5, 5, ...]
+		// Or using participation:
+		// Participation score can be fractional:
+		// ratio = net/total. let's check: calculateGradeSuggestion with weights
+		const customWeights: CourseWeights = {
+			weightSchularbeiten: 50,
+			weightTests: 50,
+			weightParticipation: 0,
+			weightObservations: 0,
+			weightHomework: 0
+		};
+		// saAvg = 4.0, testAvg = 4.992 -> rawAverage = (4.0 * 50 + 4.992 * 50)/100 = 4.496
+		// But testGrades are integers. Let's make sa [4], test [4, 5, 5] -> avg = 4.666
+		// Or 125 schularbeiten: 63 of '4' and 62 of '5': (63*4 + 62*5)/125 = (252 + 310)/125 = 562/125 = 4.496!
+		const grades125: number[] = Array(63).fill(4).concat(Array(62).fill(5));
+		const data: StudentPerformanceData = {
+			schularbeitGrades: grades125,
+			testGrades: [],
+			participation: { plus: 0, tilde: 0, minus: 0 },
+			observations: [],
+			homework: { done: 0, partial: 0, forgotten: 0 }
+		};
+		const suggestion = calculateGradeSuggestion(data, weights);
+		expect(suggestion.rawAverage).toBeCloseTo(4.496, 3);
+		expect(suggestion.calculatedAverage).toBe(4.5); // formatted for display
+		expect(suggestion.suggestedGrade).toBe(4); // not rounded up to 5!
 	});
 
 	it('validates default grading scale templates and custom thresholds', () => {

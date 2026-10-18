@@ -12,10 +12,7 @@ export default defineConfig({
 				runes: ({ filename }) =>
 					filename.split(/[/\\]/).includes('node_modules') ? undefined : true
 			},
-			adapter: adapter(),
-			alias: {
-				$lib: 'src/lib'
-			}
+			adapter: adapter()
 		})
 	],
 	test: {

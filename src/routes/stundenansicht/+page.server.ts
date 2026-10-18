@@ -4,6 +4,7 @@ import * as schema from '$lib/server/db/schema';
 import { eq, and } from 'drizzle-orm';
 import crypto from 'node:crypto';
 import { calculateSnoozeDate } from '$lib/services/reminders';
+import { getIsoWeekAndYear } from '$lib/services/dates';
 
 export const load: PageServerLoad = async ({ url, parent }) => {
 	const layoutData = await parent();
@@ -22,10 +23,7 @@ export const load: PageServerLoad = async ({ url, parent }) => {
 	}
 
 	const todayStr = new Date().toISOString().slice(0, 10);
-	const now = new Date();
-	const firstJan = new Date(now.getFullYear(), 0, 1);
-	const weekNumber = Math.ceil(((now.getTime() - firstJan.getTime()) / 86400000 + firstJan.getDay() + 1) / 7);
-	const year = now.getFullYear();
+	const { week: weekNumber, year } = getIsoWeekAndYear();
 
 	// 1. Get all active students in class
 	const studentsList = sqlite

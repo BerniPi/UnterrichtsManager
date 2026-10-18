@@ -2,7 +2,7 @@ import { db, sqlite } from '../db';
 import * as schema from '../db/schema';
 import { eq } from 'drizzle-orm';
 import crypto from 'node:crypto';
-import { calculateGradeFromPoints, DEFAULT_AUSTRIAN_SCALE, type GradingThreshold } from '$lib/services/grading';
+import { calculateGradeFromPoints, DEFAULT_AUSTRIAN_SCALE, type GradingThreshold } from '../../services/grading';
 
 export interface AssessmentWithStats {
 	id: string;
@@ -139,62 +139,67 @@ export const assessmentRepository = {
 		gradingScale?: GradingThreshold[];
 		dueDate?: string; // Standard-Rückgabefrist (z.B. 7 Tage später)
 	}): string {
-		const id = crypto.randomUUID();
-		const scaleJson = JSON.stringify(data.gradingScale || DEFAULT_AUSTRIAN_SCALE);
+		return sqlite.transaction(() => {
+			const course = sqlite.prepare('SELECT class_id FROM courses WHERE id = ?').get(data.courseId) as
+				| { class_id: string }
+				| undefined;
+			if (!course) {
+				throw new Error('Kurs nicht gefunden');
+			}
 
-		db.insert(schema.assessments)
-			.values({
-				id,
-				courseId: data.courseId,
-				title: data.title,
-				type: data.type,
-				date: data.date,
-				maxPoints: data.maxPoints,
-				gradingScale: scaleJson,
-				isCounted: true
-			})
-			.run();
+			const id = crypto.randomUUID();
+			const scaleJson = JSON.stringify(data.gradingScale || DEFAULT_AUSTRIAN_SCALE);
 
-		// Create blank assessmentResults and assessmentReturns for all active students in class
-		const course = sqlite.prepare('SELECT class_id FROM courses WHERE id = ?').get(data.courseId) as {
-			class_id: string;
-		};
-		const students = sqlite
-			.prepare("SELECT id FROM students WHERE class_id = ? AND status = 'active'")
-			.all(course.class_id) as Array<{ id: string }>;
-
-		const d = new Date(data.date);
-		d.setDate(d.getDate() + 7); // Default 7 days
-		const defaultDueDate = data.dueDate || d.toISOString().slice(0, 10);
-
-		for (const s of students) {
-			db.insert(schema.assessmentResults)
+			db.insert(schema.assessments)
 				.values({
-					id: crypto.randomUUID(),
-					assessmentId: id,
-					studentId: s.id,
-					points: null,
-					grade: null,
-					isAbsent: false,
-					isMadeUp: false
+					id,
+					courseId: data.courseId,
+					title: data.title,
+					type: data.type,
+					date: data.date,
+					maxPoints: data.maxPoints,
+					gradingScale: scaleJson,
+					isCounted: true
 				})
 				.run();
 
-			db.insert(schema.assessmentReturns)
-				.values({
-					id: crypto.randomUUID(),
-					assessmentId: id,
-					studentId: s.id,
-					returnedDate: data.date,
-					dueDate: defaultDueDate,
-					isSigned: false,
-					signedDate: null,
-					snoozedUntil: null
-				})
-				.run();
-		}
+			const students = sqlite
+				.prepare("SELECT id FROM students WHERE class_id = ? AND status = 'active'")
+				.all(course.class_id) as Array<{ id: string }>;
 
-		return id;
+			const d = new Date(data.date);
+			d.setDate(d.getDate() + 7); // Default 7 days
+			const defaultDueDate = data.dueDate || d.toISOString().slice(0, 10);
+
+			for (const s of students) {
+				db.insert(schema.assessmentResults)
+					.values({
+						id: crypto.randomUUID(),
+						assessmentId: id,
+						studentId: s.id,
+						points: null,
+						grade: null,
+						isAbsent: false,
+						isMadeUp: false
+					})
+					.run();
+
+				db.insert(schema.assessmentReturns)
+					.values({
+						id: crypto.randomUUID(),
+						assessmentId: id,
+						studentId: s.id,
+						returnedDate: data.date,
+						dueDate: defaultDueDate,
+						isSigned: false,
+						signedDate: null,
+						snoozedUntil: null
+					})
+					.run();
+			}
+
+			return id;
+		})();
 	},
 
 	updateResult(
@@ -244,31 +249,35 @@ export const assessmentRepository = {
 	},
 
 	updateGradingScale(assessmentId: string, scale: GradingThreshold[]): void {
-		const scaleJson = JSON.stringify(scale);
-		db.update(schema.assessments)
-			.set({ gradingScale: scaleJson })
-			.where(eq(schema.assessments.id, assessmentId))
-			.run();
+		sqlite.transaction(() => {
+			const scaleJson = JSON.stringify(scale);
+			db.update(schema.assessments)
+				.set({ gradingScale: scaleJson })
+				.where(eq(schema.assessments.id, assessmentId))
+				.run();
 
-		// Recalculate grades for all existing student scores on this assessment
-		const assessment = sqlite
-			.prepare('SELECT max_points FROM assessments WHERE id = ?')
-			.get(assessmentId) as { max_points: number };
+			// Recalculate grades for all existing student scores on this assessment
+			const assessment = sqlite
+				.prepare('SELECT max_points FROM assessments WHERE id = ?')
+				.get(assessmentId) as { max_points: number } | undefined;
 
-		const results = sqlite
-			.prepare(
-				'SELECT id, points, is_absent FROM assessment_results WHERE assessment_id = ? AND points IS NOT NULL'
-			)
-			.all(assessmentId) as Array<{ id: string; points: number; is_absent: number }>;
+			if (!assessment) return;
 
-		for (const r of results) {
-			if (!r.is_absent) {
-				const grade = calculateGradeFromPoints(r.points, assessment.max_points, scale);
-				db.update(schema.assessmentResults)
-					.set({ grade })
-					.where(eq(schema.assessmentResults.id, r.id))
-					.run();
+			const results = sqlite
+				.prepare(
+					'SELECT id, points, is_absent FROM assessment_results WHERE assessment_id = ? AND points IS NOT NULL'
+				)
+				.all(assessmentId) as Array<{ id: string; points: number; is_absent: number }>;
+
+			for (const r of results) {
+				if (!r.is_absent) {
+					const grade = calculateGradeFromPoints(r.points, assessment.max_points, scale);
+					db.update(schema.assessmentResults)
+						.set({ grade })
+						.where(eq(schema.assessmentResults.id, r.id))
+						.run();
+				}
 			}
-		}
+		})();
 	}
 };

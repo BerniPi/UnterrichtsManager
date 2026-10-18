@@ -2,27 +2,22 @@
 	import { enhance } from '$app/forms';
 	import { CheckCircle2, Sliders } from '@lucide/svelte';
 
-	let {
-		course
-	} = $props<{
+	interface Props {
 		course: any;
-	}>();
+	}
 
-	let weightSA = $state(40);
-	let weightTests = $state(20);
-	let weightPart = $state(25);
-	let weightObs = $state(10);
-	let weightHW = $state(5);
+	let { course }: Props = $props();
 
-	$effect(() => {
-		if (course) {
-			weightSA = course.weightSchularbeiten;
-			weightTests = course.weightTests;
-			weightPart = course.weightParticipation;
-			weightObs = course.weightObservations;
-			weightHW = course.weightHomework;
-		}
-	});
+	// svelte-ignore state_referenced_locally
+	let weightSA = $state(course?.weightSchularbeiten ?? 40);
+	// svelte-ignore state_referenced_locally
+	let weightTests = $state(course?.weightTests ?? 20);
+	// svelte-ignore state_referenced_locally
+	let weightPart = $state(course?.weightParticipation ?? 25);
+	// svelte-ignore state_referenced_locally
+	let weightObs = $state(course?.weightObservations ?? 10);
+	// svelte-ignore state_referenced_locally
+	let weightHW = $state(course?.weightHomework ?? 5);
 
 	let saveToast = $state<string | null>(null);
 

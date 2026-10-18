@@ -11,20 +11,23 @@
 		X
 	} from '@lucide/svelte';
 
+	interface Props {
+		course: any;
+		students?: StudentCourseEvaluation[];
+		earlyWarnings?: Array<any>;
+	}
+
 	let {
 		course,
 		students = [],
 		earlyWarnings = []
-	} = $props<{
-		course: any;
-		students: StudentCourseEvaluation[];
-		earlyWarnings: Array<any>;
-	}>();
+	}: Props = $props();
 
 	let showIssueModal = $state(false);
 	let selectedStudentId = $state('');
 	let reason = $state('');
 	let returnDays = $state(7);
+	let semester = $state(1);
 
 	// Find students with automatic suggestion who don't already have an active warning
 	const suggestedStudents = $derived(
@@ -34,6 +37,7 @@
 	function openIssueModal(s: StudentCourseEvaluation) {
 		selectedStudentId = s.studentId;
 		reason = s.earlyWarningSuggestion.reasons.join('; ');
+		semester = s.earlyWarningSuggestion.suggestedSemester ?? 1;
 		showIssueModal = true;
 	}
 </script>
@@ -204,7 +208,10 @@
 			<form
 				action="?/createEarlyWarning"
 				method="POST"
-				use:enhance={() => () => (showIssueModal = false)}
+				use:enhance={() => async ({ result, update }) => {
+					await update();
+					if (result.type === 'success') showIssueModal = false;
+				}}
 				class="space-y-4"
 			>
 				<div>
@@ -239,21 +246,38 @@
 					></textarea>
 				</div>
 
-				<div>
-					<label for="ewDays" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
-						Rückgabefrist für unterschriebenen Abschnitt
-					</label>
-					<select
-						id="ewDays"
-						name="days"
-						bind:value={returnDays}
-						class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white text-sm focus:ring-2 focus:ring-blue-500"
-					>
-						<option value="5">5 Tage</option>
-						<option value="7">7 Tage (Standard)</option>
-						<option value="10">10 Tage</option>
-						<option value="14">14 Tage</option>
-					</select>
+				<div class="grid grid-cols-2 gap-3">
+					<div>
+						<label for="ewSemester" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
+							Semester *
+						</label>
+						<select
+							id="ewSemester"
+							name="semester"
+							bind:value={semester}
+							class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white text-sm focus:ring-2 focus:ring-blue-500"
+						>
+							<option value={1}>1. Semester</option>
+							<option value={2}>2. Semester</option>
+						</select>
+					</div>
+
+					<div>
+						<label for="ewDays" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
+							Rückgabefrist
+						</label>
+						<select
+							id="ewDays"
+							name="days"
+							bind:value={returnDays}
+							class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white text-sm focus:ring-2 focus:ring-blue-500"
+						>
+							<option value="5">5 Tage</option>
+							<option value="7">7 Tage (Standard)</option>
+							<option value="10">10 Tage</option>
+							<option value="14">14 Tage</option>
+						</select>
+					</div>
 				</div>
 
 				<div class="flex items-center justify-end space-x-3 pt-3 border-t border-slate-800">
