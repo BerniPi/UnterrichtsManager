@@ -7,13 +7,17 @@ services:
     # or attach to your shared caddy docker network below
     ports:
       - "127.0.0.1:3000:3000"
+    env_file:
+      - path: .env
+        required: false
     environment:
       - NODE_ENV=production
       - PORT=3000
       - HOST=0.0.0.0
-      - ORIGIN=https://noten.example.at
+      - ORIGIN=${ORIGIN:-https://noten.example.at}
       - PROTOCOL_HEADER=x-forwarded-proto
       - DATABASE_URL=/app/data/notenmanager.db
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
     volumes:
       - notenmanager_data:/app/data
 
