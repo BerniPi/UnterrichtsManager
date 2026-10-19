@@ -13,6 +13,7 @@
 	} from '@lucide/svelte';
 
 	import CourseNotenTab from '$lib/components/course/CourseNotenTab.svelte';
+	import CourseLessonsTab from '$lib/components/course/CourseLessonsTab.svelte';
 	import CourseTestsTab from '$lib/components/course/CourseTestsTab.svelte';
 	import CourseObservationsTab from '$lib/components/course/CourseObservationsTab.svelte';
 	import CourseHomeworkTab from '$lib/components/course/CourseHomeworkTab.svelte';
@@ -27,6 +28,7 @@
 			assessments: Array<any>;
 			selectedAssessment: any;
 			observations: Array<any>;
+			lessons?: Array<any>;
 			homeworks: Array<any>;
 			earlyWarnings: Array<any>;
 			gradingTemplates?: Array<any>;
@@ -39,6 +41,7 @@
 
 	const tabs = [
 		{ id: 'noten', label: 'Noten & Vorschlag', icon: FileSpreadsheet },
+		{ id: 'stunden', label: 'Stundeneinträge', icon: BookOpen },
 		{ id: 'tests', label: 'Tests & Schularbeiten', icon: Award },
 		{ id: 'beobachtungen', label: 'Beobachtungen', icon: Eye },
 		{ id: 'hausuebungen', label: 'Hausübungen', icon: Home },
@@ -105,6 +108,8 @@
 	<div>
 		{#if data.activeTab === 'noten'}
 			<CourseNotenTab course={data.course} students={data.evaluatedStudents} />
+		{:else if data.activeTab === 'stunden'}
+			<CourseLessonsTab course={data.course} lessons={data.lessons || []} />
 		{:else if data.activeTab === 'tests'}
 			<CourseTestsTab
 				course={data.course}

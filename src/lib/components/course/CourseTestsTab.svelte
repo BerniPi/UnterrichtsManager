@@ -23,7 +23,8 @@
 		Send,
 		AlertCircle,
 		Sparkles,
-		Trash2
+		Trash2,
+		FileText
 	} from '@lucide/svelte';
 
 	interface Props {
@@ -50,6 +51,7 @@
 	let newType = $state<'schularbeit' | 'test' | 'wiederholung'>('schularbeit');
 	let newDate = $state(new Date().toISOString().slice(0, 10));
 	let newMaxPoints = $state(48);
+	let newNote = $state('');
 	let newReturnDays = $state(7);
 	$effect(() => {
 		newReturnDays = defaultReturnDays;
@@ -259,6 +261,40 @@
 				</div>
 			</div>
 
+			<!-- GLOBALE NOTIZ ZUM TEST / ZUR SCHULARBEIT -->
+			<div class="p-3.5 bg-slate-900 border border-slate-800 rounded-2xl shadow-sm space-y-2">
+				<div class="flex items-center justify-between text-xs">
+					<span class="font-bold uppercase tracking-wider text-slate-300 flex items-center space-x-1.5">
+						<FileText class="w-4 h-4 text-blue-400" />
+						<span>Globale Notiz / Bemerkungen ({selectedAssessment.type === 'schularbeit' ? 'zur Schularbeit' : 'zum Test'}):</span>
+					</span>
+				</div>
+				<form
+					action="?/updateAssessmentNote&tab=tests"
+					method="POST"
+					use:enhance={() => async ({ update }) => {
+						await update();
+						showToast('Globale Notiz gespeichert');
+					}}
+					class="flex items-center gap-2"
+				>
+					<input type="hidden" name="assessmentId" value={selectedAssessment.id} />
+					<input
+						type="text"
+						name="note"
+						bind:value={selectedAssessment.note}
+						placeholder="Globale Notiz erfassen (z.B. Stoffabgrenzung, Schwerpunkte, Klassendurchschnitt)..."
+						class="flex-1 px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-700 text-white text-xs focus:ring-2 focus:ring-blue-500"
+					/>
+					<button
+						type="submit"
+						class="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shrink-0 transition active:scale-95"
+					>
+						Speichern
+					</button>
+				</form>
+			</div>
+
 			<!-- PERMANENT NOTENSCHLÜSSEL ÜBERSICHTSLEISTE (Punkte → Note) -->
 			<div class="p-3.5 bg-slate-900 border border-slate-800 rounded-2xl shadow-sm space-y-2">
 				<div class="flex items-center justify-between text-xs">
@@ -336,9 +372,10 @@
 								<th class="py-3 px-4">Schüler</th>
 								<th class="py-3 px-4 w-40 text-center">Punkte (max. {selectedAssessment.maxPoints})</th>
 								<th class="py-3 px-3 w-28 text-center">Erreicht (%)</th>
-								<th class="py-3 px-4 w-48 text-center">Berechnete Note</th>
+								<th class="py-3 px-4 w-44 text-center">Berechnete Note</th>
 								<th class="py-3 px-3 w-24 text-center">Abwesend</th>
 								<th class="py-3 px-3 w-28 text-center">Nachgeholt</th>
+								<th class="py-3 px-4">Notiz</th>
 							</tr>
 						</thead>
 						<tbody class="divide-y divide-slate-800/80 text-slate-200">
@@ -370,6 +407,7 @@
 											<input type="hidden" name="studentId" value={r.studentId} />
 											<input type="hidden" name="isAbsent" value={r.isAbsent ? 'true' : 'false'} />
 											<input type="hidden" name="isMadeUp" value={r.isMadeUp ? 'true' : 'false'} />
+											<input type="hidden" name="note" value={r.note ?? ''} />
 
 											<div class="relative inline-flex items-center">
 												<input
@@ -427,6 +465,7 @@
 											<input type="hidden" name="points" value={r.points ?? ''} />
 											<input type="hidden" name="isAbsent" value={r.isAbsent ? 'true' : 'false'} />
 											<input type="hidden" name="isMadeUp" value={r.isMadeUp ? 'true' : 'false'} />
+											<input type="hidden" name="note" value={r.note ?? ''} />
 											<button
 												type="submit"
 												class="p-1 px-2 rounded text-xs transition {r.isAbsent ? 'text-amber-400 bg-amber-950/80 border border-amber-800 font-bold' : 'text-slate-500 hover:text-white'}"
@@ -453,12 +492,43 @@
 											<input type="hidden" name="points" value={r.points ?? ''} />
 											<input type="hidden" name="isAbsent" value={r.isAbsent ? 'true' : 'false'} />
 											<input type="hidden" name="isMadeUp" value={r.isMadeUp ? 'true' : 'false'} />
+											<input type="hidden" name="note" value={r.note ?? ''} />
 											<button
 												type="submit"
 												class="p-1 px-2 rounded text-xs transition {r.isMadeUp ? 'text-emerald-400 bg-emerald-950/80 border border-emerald-800 font-bold' : 'text-slate-500 hover:text-white'}"
 											>
 												{r.isMadeUp ? 'Nachgeholt ✓' : '–'}
 											</button>
+										</form>
+									</td>
+
+									<!-- Note per student -->
+									<td class="py-2.5 px-4">
+										<form
+											action="?/saveAssessmentScore&tab=tests"
+											method="POST"
+											use:enhance={() => {
+												return async ({ result }) => {
+													if (result.type === 'success') {
+														showToast(`Notiz für ${r.lastName} gespeichert`);
+													}
+												};
+											}}
+											class="w-full"
+										>
+											<input type="hidden" name="assessmentId" value={selectedAssessment.id} />
+											<input type="hidden" name="studentId" value={r.studentId} />
+											<input type="hidden" name="points" value={r.points ?? ''} />
+											<input type="hidden" name="isAbsent" value={r.isAbsent ? 'true' : 'false'} />
+											<input type="hidden" name="isMadeUp" value={r.isMadeUp ? 'true' : 'false'} />
+											<input
+												type="text"
+												name="note"
+												bind:value={r.note}
+												placeholder="Notiz zum Schüler..."
+												onchange={(e) => (e.target as HTMLInputElement).form?.requestSubmit()}
+												class="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-white text-xs placeholder:text-slate-600 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+											/>
 										</form>
 									</td>
 								</tr>
@@ -704,6 +774,21 @@
 							</div>
 						{/each}
 					</div>
+				</div>
+
+				<!-- Globale Notiz zum Test / Schularbeit -->
+				<div>
+					<label for="assNote" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
+						Globale Notiz / Bemerkungen (optional)
+					</label>
+					<textarea
+						id="assNote"
+						name="note"
+						rows="2"
+						bind:value={newNote}
+						placeholder="Themen, Stoffabgrenzung, Schwerpunkte, Bemerkungen..."
+						class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white text-xs focus:ring-2 focus:ring-blue-500"
+					></textarea>
 				</div>
 
 				<input type="hidden" name="gradingScaleJson" value={JSON.stringify(templateScale)} />

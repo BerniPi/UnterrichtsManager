@@ -9,7 +9,8 @@
 		BookOpen,
 		ExternalLink,
 		X,
-		Hash
+		Hash,
+		Pencil
 	} from '@lucide/svelte';
 
 	interface Props {
@@ -24,6 +25,12 @@
 
 	let showAddModal = $state(false);
 	let filterActive = $state(true);
+
+	let editingStudent = $state<any | null>(null);
+	let editFirstName = $state('');
+	let editLastName = $state('');
+	let editCatalogNumber = $state<number | null>(null);
+	let editWebuntisId = $state('');
 
 	const visibleStudents = $derived(
 		filterActive ? data.students.filter((s: any) => s.status === 'active') : data.students
@@ -142,6 +149,21 @@
 					</div>
 
 					<div class="flex items-center space-x-2">
+						<button
+							type="button"
+							onclick={() => {
+								editingStudent = student;
+								editFirstName = student.first_name;
+								editLastName = student.last_name;
+								editCatalogNumber = student.catalog_number;
+								editWebuntisId = student.webuntis_id || '';
+							}}
+							class="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+							title="Schülerdaten / Name bearbeiten"
+						>
+							<Pencil class="w-4 h-4 text-blue-400" />
+						</button>
+
 						<a
 							href="/schueler/{student.id}"
 							class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 transition"
@@ -260,6 +282,104 @@
 						class="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold shadow-md shadow-blue-500/20"
 					>
 						Schüler anlegen
+					</button>
+				</div>
+			</form>
+		</div>
+	</div>
+{/if}
+
+<!-- Modal: Edit Student -->
+{#if editingStudent}
+	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
+		<div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md p-6 space-y-4 shadow-2xl">
+			<div class="flex items-center justify-between pb-3 border-b border-slate-800">
+				<h3 class="text-lg font-bold text-white">Schüler bearbeiten</h3>
+				<button type="button" onclick={() => (editingStudent = null)} class="text-slate-400 hover:text-white">
+					<X class="w-5 h-5" />
+				</button>
+			</div>
+
+			<form
+				action="?/updateStudent"
+				method="POST"
+				use:enhance={() => async ({ result, update }) => {
+					await update();
+					if (result.type === 'success') editingStudent = null;
+				}}
+				class="space-y-4"
+			>
+				<input type="hidden" name="studentId" value={editingStudent.id} />
+
+				<div>
+					<label for="editLastName" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
+						Nachname *
+					</label>
+					<input
+						id="editLastName"
+						name="lastName"
+						type="text"
+						required
+						bind:value={editLastName}
+						class="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white focus:ring-2 focus:ring-blue-500 text-sm"
+					/>
+				</div>
+
+				<div>
+					<label for="editFirstName" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
+						Vorname *
+					</label>
+					<input
+						id="editFirstName"
+						name="firstName"
+						type="text"
+						required
+						bind:value={editFirstName}
+						class="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white focus:ring-2 focus:ring-blue-500 text-sm"
+					/>
+				</div>
+
+				<div class="grid grid-cols-2 gap-3">
+					<div>
+						<label for="editCatalogNum" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
+							Katalognummer
+						</label>
+						<input
+							id="editCatalogNum"
+							name="catalogNumber"
+							type="number"
+							bind:value={editCatalogNumber}
+							class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white focus:ring-2 focus:ring-blue-500 text-sm"
+						/>
+					</div>
+
+					<div>
+						<label for="editWebuntisId" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
+							WebUntis-ID
+						</label>
+						<input
+							id="editWebuntisId"
+							name="webuntisId"
+							type="text"
+							bind:value={editWebuntisId}
+							class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white focus:ring-2 focus:ring-blue-500 text-sm"
+						/>
+					</div>
+				</div>
+
+				<div class="flex items-center justify-end space-x-3 pt-3 border-t border-slate-800">
+					<button
+						type="button"
+						onclick={() => (editingStudent = null)}
+						class="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-sm font-medium"
+					>
+						Abbrechen
+					</button>
+					<button
+						type="submit"
+						class="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold shadow-md shadow-blue-500/20 active:scale-95 transition"
+					>
+						Änderungen speichern
 					</button>
 				</div>
 			</form>

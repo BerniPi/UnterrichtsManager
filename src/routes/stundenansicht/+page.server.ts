@@ -5,6 +5,7 @@ import { eq, and } from 'drizzle-orm';
 import crypto from 'node:crypto';
 import { calculateSnoozeDate } from '$lib/services/reminders';
 import { getIsoWeekAndYear } from '$lib/services/dates';
+import { lessonRepository } from '$lib/server/repositories/lesson.repository';
 
 export const load: PageServerLoad = async ({ url, parent }) => {
 	const layoutData = await parent();
@@ -174,6 +175,28 @@ export const load: PageServerLoad = async ({ url, parent }) => {
 		overdueByStudent.set(ew.student_id, list);
 	}
 
+	// 5. Active Stundeneintrag (Lesson)
+	const requestedDate = url.searchParams.get('date');
+	const requestedLessonId = url.searchParams.get('lessonId');
+
+	let activeLesson = null;
+	if (requestedLessonId) {
+		activeLesson = lessonRepository.getById(requestedLessonId);
+	}
+	if (!activeLesson) {
+		const targetDate = requestedDate || todayStr;
+		activeLesson = lessonRepository.getOrCreateForDate(selectedCourse.id, targetDate);
+	}
+
+	const recentLessons = lessonRepository.getByCourse(selectedCourse.id).slice(0, 8);
+
+	const lessonStudentNoteMap = new Map<string, string>();
+	if (activeLesson) {
+		for (const s of activeLesson.scores) {
+			if (s.note) lessonStudentNoteMap.set(s.studentId, s.note);
+		}
+	}
+
 	const studentsWithDetails = studentsList.map((s) => ({
 		id: s.id,
 		firstName: s.first_name,
@@ -182,7 +205,8 @@ export const load: PageServerLoad = async ({ url, parent }) => {
 		webuntisId: s.webuntis_id,
 		participation: partMap.get(s.id) || null,
 		homeworkStatus: hwMap.get(s.id) || null,
-		overdueItems: overdueByStudent.get(s.id) || []
+		overdueItems: overdueByStudent.get(s.id) || [],
+		lessonNote: lessonStudentNoteMap.get(s.id) || ''
 	}));
 
 	return {
@@ -191,7 +215,9 @@ export const load: PageServerLoad = async ({ url, parent }) => {
 		currentWeekNumber: weekNumber,
 		currentYear: year,
 		activeHomework,
-		studentsWithDetails
+		studentsWithDetails,
+		activeLesson,
+		recentLessons
 	};
 };
 
@@ -370,5 +396,39 @@ export const actions: Actions = {
 		}
 
 		return { success: true };
+	},
+
+	saveLessonGlobalNote: async ({ request }) => {
+		const form = await request.formData();
+		const lessonId = form.get('lessonId')?.toString();
+		const topic = form.has('topic') ? (form.get('topic')?.toString().trim() || null) : undefined;
+		const note = form.has('note') ? (form.get('note')?.toString().trim() || null) : undefined;
+
+		if (!lessonId) return { success: false, message: 'Stundeneintrag-ID fehlt' };
+		lessonRepository.updateGlobal(lessonId, { topic, note });
+		return { success: true };
+	},
+
+	saveLessonStudentNote: async ({ request }) => {
+		const form = await request.formData();
+		const lessonId = form.get('lessonId')?.toString();
+		const studentId = form.get('studentId')?.toString();
+		const note = form.get('note')?.toString().trim() || null;
+
+		if (!lessonId || !studentId) return { success: false, message: 'Parameter fehlen' };
+		lessonRepository.saveStudentNote(lessonId, studentId, note);
+		return { success: true };
+	},
+
+	createLesson: async ({ request }) => {
+		const form = await request.formData();
+		const courseId = form.get('courseId')?.toString();
+		const date = form.get('date')?.toString() || new Date().toISOString().slice(0, 10);
+		const topic = form.get('topic')?.toString().trim() || null;
+		const note = form.get('note')?.toString().trim() || null;
+
+		if (!courseId) return { success: false, message: 'Kurs-ID fehlt' };
+		const id = lessonRepository.create({ courseId, date, topic, note });
+		return { success: true, createdLessonId: id };
 	}
 };

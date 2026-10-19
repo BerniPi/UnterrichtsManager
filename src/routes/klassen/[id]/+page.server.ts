@@ -4,6 +4,7 @@ import { db, sqlite } from '$lib/server/db';
 import * as schema from '$lib/server/db/schema';
 import { eq } from 'drizzle-orm';
 import crypto from 'node:crypto';
+import { studentRepository } from '$lib/server/repositories/student.repository';
 
 export const load: PageServerLoad = async ({ params }) => {
 	const classId = params.id;
@@ -106,6 +107,29 @@ export const actions: Actions = {
 				.where(eq(schema.students.id, students[i].id))
 				.run();
 		}
+
+		return { success: true };
+	},
+
+	updateStudent: async ({ request }) => {
+		const form = await request.formData();
+		const studentId = form.get('studentId')?.toString();
+		const firstName = form.get('firstName')?.toString().trim();
+		const lastName = form.get('lastName')?.toString().trim();
+		const catalogNumberStr = form.get('catalogNumber')?.toString().trim();
+		const catalogNumber = catalogNumberStr ? parseInt(catalogNumberStr, 10) : null;
+		const webuntisId = form.get('webuntisId')?.toString().trim() || null;
+
+		if (!studentId || !firstName || !lastName) {
+			return { success: false, message: 'ID, Vorname und Nachname sind erforderlich' };
+		}
+
+		studentRepository.update(studentId, {
+			firstName,
+			lastName,
+			catalogNumber,
+			webuntisId
+		});
 
 		return { success: true };
 	}

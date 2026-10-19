@@ -23,6 +23,8 @@
 			currentYear: number;
 			activeHomework: any;
 			studentsWithDetails: Array<any>;
+			activeLesson: any;
+			recentLessons: Array<any>;
 		};
 	}
 
@@ -34,6 +36,14 @@
 	let noteContent = $state('');
 	let noteCategory = $state('allgemein');
 	let toastMessage = $state<string | null>(null);
+
+	let lessonTopic = $state('');
+	let lessonNote = $state('');
+
+	$effect(() => {
+		lessonTopic = data.activeLesson?.topic || '';
+		lessonNote = data.activeLesson?.note || '';
+	});
 
 	function showToast(msg: string) {
 		toastMessage = msg;
@@ -143,6 +153,102 @@
 					<span class="text-slate-500">(Fällig: {data.activeHomework.due_date})</span>
 				</div>
 				<span class="text-slate-400 hidden sm:inline">HÜ-Status direkt in der Zeile erfassen</span>
+			</div>
+		{/if}
+
+		<!-- Active Lesson Entry Card (Global Note & Topic) -->
+		{#if data.activeLesson}
+			<div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg space-y-3">
+				<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-800/80">
+					<div class="flex items-center space-x-2">
+						<span class="p-1.5 rounded-lg bg-blue-950 text-blue-400 border border-blue-800/60">
+							<BookOpen class="w-4 h-4" />
+						</span>
+						<div>
+							<h3 class="text-sm font-bold text-white flex items-center space-x-2">
+								<span>Stundeneintrag: {data.activeLesson.date}</span>
+								{#if data.activeLesson.date === new Date().toISOString().slice(0, 10)}
+									<span class="px-2 py-0.5 rounded-full text-[10px] bg-emerald-950 text-emerald-300 border border-emerald-800">Heute</span>
+								{/if}
+							</h3>
+							<p class="text-[11px] text-slate-400">
+								Globale Notiz für die Stunde und individuelle Schülernotizen
+							</p>
+						</div>
+					</div>
+
+					<!-- Recent Lessons switcher -->
+					{#if data.recentLessons && data.recentLessons.length > 0}
+						<div class="flex items-center gap-1.5 overflow-x-auto text-xs py-1">
+							<span class="text-slate-500 text-[11px] mr-1 hidden sm:inline shrink-0">Stunde wechseln:</span>
+							{#each data.recentLessons as rl}
+								<a
+									href="/stundenansicht?courseId={data.selectedCourse.id}&lessonId={rl.id}"
+									class="px-2 py-1 rounded-lg border text-[11px] transition whitespace-nowrap shrink-0 {data.activeLesson.id === rl.id ? 'bg-blue-600 text-white border-blue-500 font-semibold' : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white hover:bg-slate-800'}"
+								>
+									{rl.date.slice(5)} {rl.topic ? `• ${rl.topic}` : ''}
+								</a>
+							{/each}
+						</div>
+					{/if}
+				</div>
+
+				<!-- Global Topic & Note Form -->
+				<form
+					action="?/saveLessonGlobalNote"
+					method="POST"
+					use:enhance={() => {
+						return async ({ update }) => {
+							await update({ reset: false });
+							showToast('Globale Stundennotiz gespeichert');
+						};
+					}}
+					class="space-y-3"
+				>
+					<input type="hidden" name="lessonId" value={data.activeLesson.id} />
+					<div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+						<div>
+							<label for="lesson-topic" class="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1">
+								Thema / Lehrstoff
+							</label>
+							<input
+								id="lesson-topic"
+								type="text"
+								name="topic"
+								bind:value={lessonTopic}
+								placeholder="z.B. Bruchrechnen Einführung..."
+								class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white text-xs focus:ring-2 focus:ring-blue-500"
+								onblur={(e) => e.currentTarget.form?.requestSubmit()}
+							/>
+						</div>
+
+						<div class="md:col-span-2">
+							<div class="flex items-center justify-between mb-1">
+								<label for="lesson-global-note" class="block text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+									Globale Notiz zur Stunde (für die gesamte Klasse)
+								</label>
+								<span class="text-[10px] text-slate-500">Wird beim Verlassen automatisch gespeichert</span>
+							</div>
+							<div class="flex gap-2">
+								<textarea
+									id="lesson-global-note"
+									name="note"
+									rows="2"
+									bind:value={lessonNote}
+									placeholder="z.B. Wichtige Hinweise, Stoffverteilung, Hausübung besprochen, Klassenverfassung..."
+									class="flex-1 px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-700 text-white text-xs focus:ring-2 focus:ring-blue-500 resize-y"
+									onblur={(e) => e.currentTarget.form?.requestSubmit()}
+								></textarea>
+								<button
+									type="submit"
+									class="self-end px-3 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow transition active:scale-95 shrink-0"
+								>
+									Speichern
+								</button>
+							</div>
+						</div>
+					</div>
+				</form>
 			</div>
 		{/if}
 
@@ -366,6 +472,44 @@
 							</div>
 						{/if}
 					</div>
+
+					<!-- Student Lesson Note (Per-Student Note for Active Lesson) -->
+					{#if data.activeLesson}
+						<div class="mt-3 pt-3 border-t border-slate-800/70">
+							<form
+								action="?/saveLessonStudentNote"
+								method="POST"
+								use:enhance={() => {
+									return async ({ update }) => {
+										await update({ reset: false });
+										showToast(`Notiz für ${student.firstName} gespeichert`);
+									};
+								}}
+								class="flex items-center gap-2"
+							>
+								<input type="hidden" name="lessonId" value={data.activeLesson.id} />
+								<input type="hidden" name="studentId" value={student.id} />
+								<div class="relative flex-1">
+									<input
+										type="text"
+										name="note"
+										value={student.lessonNote}
+										placeholder="Notiz für {student.firstName} zu dieser Stunde (z.B. Mitarbeit, Auffälligkeit, Vereinbarung)..."
+										class="w-full pl-8 pr-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 focus:border-blue-500 text-xs text-white placeholder-slate-500 transition"
+										onchange={(e) => e.currentTarget.form?.requestSubmit()}
+									/>
+									<FileText class="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-2 pointer-events-none" />
+								</div>
+								<button
+									type="submit"
+									class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-medium border border-slate-700 shrink-0 transition"
+									title="Notiz speichern"
+								>
+									Speichern
+								</button>
+							</form>
+						</div>
+					{/if}
 				</div>
 			{/each}
 		</div>

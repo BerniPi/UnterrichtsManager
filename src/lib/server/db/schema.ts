@@ -98,7 +98,8 @@ export const observations = sqliteTable('observations', {
 	title: text('title').notNull(),
 	date: text('date').notNull(), // YYYY-MM-DD
 	maxPoints: real('max_points').notNull(),
-	description: text('description')
+	description: text('description'),
+	note: text('note')
 });
 
 export const observationScores = sqliteTable('observation_scores', {
@@ -124,7 +125,8 @@ export const assessments = sqliteTable('assessments', {
 	date: text('date').notNull(), // YYYY-MM-DD
 	maxPoints: real('max_points').notNull(),
 	gradingScale: text('grading_scale').notNull(), // JSON string: [{ grade: 1, minPercent: 88 }, ...]
-	isCounted: integer('is_counted', { mode: 'boolean' }).notNull().default(true)
+	isCounted: integer('is_counted', { mode: 'boolean' }).notNull().default(true),
+	note: text('note')
 });
 
 export const assessmentResults = sqliteTable('assessment_results', {
@@ -232,6 +234,30 @@ export const notes = sqliteTable('notes', {
 	content: text('content').notNull()
 });
 
+// --- Stundeneinträge (Lessons / Class periods) ---
+export const lessonEntries = sqliteTable('lesson_entries', {
+	id: text('id').primaryKey(),
+	courseId: text('course_id')
+		.notNull()
+		.references(() => courses.id, { onDelete: 'cascade' }),
+	date: text('date').notNull(), // YYYY-MM-DD
+	topic: text('topic'), // z.B. "Lineare Funktionen – Übungen"
+	note: text('note'), // Globaler Notizeintrag für die Stunde
+	createdAt: integer('created_at').notNull()
+});
+
+export const lessonStudentNotes = sqliteTable('lesson_student_notes', {
+	id: text('id').primaryKey(),
+	lessonId: text('lesson_id')
+		.notNull()
+		.references(() => lessonEntries.id, { onDelete: 'cascade' }),
+	studentId: text('student_id')
+		.notNull()
+		.references(() => students.id, { onDelete: 'cascade' }),
+	note: text('note').notNull(), // Notizeintrag pro Schüler für diese Stunde
+	createdAt: integer('created_at').notNull()
+});
+
 // --- Final Manual Grades ---
 export const courseFinalGrades = sqliteTable('course_final_grades', {
 	id: text('id').primaryKey(),
@@ -284,7 +310,8 @@ export const studentsRelations = relations(students, ({ one, many }) => ({
 	earlyWarnings: many(earlyWarnings),
 	notes: many(notes),
 	observationScores: many(observationScores),
-	homeworkStatuses: many(homeworkStatuses)
+	homeworkStatuses: many(homeworkStatuses),
+	lessonStudentNotes: many(lessonStudentNotes)
 }));
 
 export const coursesRelations = relations(courses, ({ one, many }) => ({
@@ -300,7 +327,8 @@ export const coursesRelations = relations(courses, ({ one, many }) => ({
 	observations: many(observations),
 	homeworks: many(homeworks),
 	participationEntries: many(participationEntries),
-	earlyWarnings: many(earlyWarnings)
+	earlyWarnings: many(earlyWarnings),
+	lessonEntries: many(lessonEntries)
 }));
 
 export const assessmentsRelations = relations(assessments, ({ one, many }) => ({
@@ -331,5 +359,24 @@ export const earlyWarningsRelations = relations(earlyWarnings, ({ one }) => ({
 	course: one(courses, {
 		fields: [earlyWarnings.courseId],
 		references: [courses.id]
+	})
+}));
+
+export const lessonEntriesRelations = relations(lessonEntries, ({ one, many }) => ({
+	course: one(courses, {
+		fields: [lessonEntries.courseId],
+		references: [courses.id]
+	}),
+	studentNotes: many(lessonStudentNotes)
+}));
+
+export const lessonStudentNotesRelations = relations(lessonStudentNotes, ({ one }) => ({
+	lesson: one(lessonEntries, {
+		fields: [lessonStudentNotes.lessonId],
+		references: [lessonEntries.id]
+	}),
+	student: one(students, {
+		fields: [lessonStudentNotes.studentId],
+		references: [students.id]
 	})
 }));

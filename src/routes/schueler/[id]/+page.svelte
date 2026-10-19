@@ -11,7 +11,10 @@
 		Trash2,
 		Award,
 		Calendar,
-		MessageSquare
+		MessageSquare,
+		BookOpen,
+		Pencil,
+		X
 	} from '@lucide/svelte';
 
 	interface Props {
@@ -21,6 +24,7 @@
 			notes: Array<any>;
 			earlyWarnings: Array<any>;
 			participationHistory: Array<any>;
+			lessonNotes: Array<any>;
 		};
 	}
 
@@ -31,6 +35,12 @@
 	let newNoteTitle = $state('');
 	let newNoteContent = $state('');
 	let newNoteDate = $state(new Date().toISOString().slice(0, 10));
+
+	let showEditStudentModal = $state(false);
+	let editFirstName = $state('');
+	let editLastName = $state('');
+	let editCatalogNumber = $state<number | null>(null);
+	let editWebuntisId = $state('');
 
 	const categoryBadges: Record<string, { label: string; bg: string; text: string }> = {
 		elterngespraech: { label: 'Elterngespräch', bg: 'bg-amber-950/70', text: 'text-amber-300' },
@@ -70,6 +80,22 @@
 		</div>
 
 		<div class="flex items-center space-x-2">
+			<button
+				type="button"
+				onclick={() => {
+					editFirstName = data.student.firstName;
+					editLastName = data.student.lastName;
+					editCatalogNumber = data.student.catalogNumber;
+					editWebuntisId = data.student.webuntisId || '';
+					showEditStudentModal = true;
+				}}
+				class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 flex items-center space-x-1.5 transition active:scale-95"
+				title="Vorname, Nachname, Katalognummer bearbeiten"
+			>
+				<Pencil class="w-4 h-4 text-blue-400" />
+				<span>Daten bearbeiten</span>
+			</button>
+
 			<button
 				type="button"
 				onclick={() => window.print()}
@@ -191,19 +217,66 @@
 							<span class="text-xs font-semibold text-slate-400 print:text-gray-600 block mb-1.5">Einzelnoten:</span>
 							<div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 text-xs">
 								{#each ce.assessments as a}
-									<div class="p-2.5 rounded-xl bg-slate-950 border border-slate-800/80 print:bg-gray-50 print:border-gray-200 flex items-center justify-between">
-										<div>
-											<span class="font-bold text-white print:text-slate-900 block truncate">{a.title}</span>
-											<span class="text-[10px] text-slate-500 font-mono">{a.date} | {a.points ?? '–'}/{a.maxPoints} Pkt.</span>
+									<div class="p-2.5 rounded-xl bg-slate-950 border border-slate-800/80 print:bg-gray-50 print:border-gray-200 flex flex-col justify-between">
+										<div class="flex items-center justify-between">
+											<div>
+												<span class="font-bold text-white print:text-slate-900 block truncate">{a.title}</span>
+												<span class="text-[10px] text-slate-500 font-mono">{a.date} | {a.points ?? '–'}/{a.maxPoints} Pkt.</span>
+											</div>
+
+											<div class="flex items-center space-x-2 shrink-0">
+												{#if a.isAbsent}
+													<span class="px-1.5 py-0.5 rounded text-[10px] bg-slate-800 text-slate-400">Abw.</span>
+												{:else if a.grade}
+													<span class="font-bold text-sm text-blue-400 print:text-slate-900 font-mono">Note {a.grade}</span>
+												{/if}
+											</div>
 										</div>
 
-										<div class="flex items-center space-x-2">
-											{#if a.isAbsent}
-												<span class="px-1.5 py-0.5 rounded text-[10px] bg-slate-800 text-slate-400">Abw.</span>
-											{:else if a.grade}
-												<span class="font-bold text-sm text-blue-400 print:text-slate-900 font-mono">Note {a.grade}</span>
+										{#if a.studentNote}
+											<div class="mt-2 pt-1.5 border-t border-slate-800/80 text-[11px] text-amber-300">
+												<span class="font-semibold text-slate-400">Notiz:</span> {a.studentNote}
+											</div>
+										{/if}
+										{#if a.globalNote}
+											<div class="mt-1 text-[10px] text-slate-500 italic">
+												Thema: {a.globalNote}
+											</div>
+										{/if}
+									</div>
+								{/each}
+							</div>
+						</div>
+					{/if}
+
+					<!-- Observations list in this subject -->
+					{#if ce.observations && ce.observations.length > 0}
+						<div class="pt-2">
+							<span class="text-xs font-semibold text-slate-400 print:text-gray-600 block mb-1.5">Mitarbeitsbeobachtungen:</span>
+							<div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 text-xs">
+								{#each ce.observations as o}
+									<div class="p-2.5 rounded-xl bg-slate-950 border border-slate-800/80 print:bg-gray-50 print:border-gray-200 flex flex-col justify-between">
+										<div class="flex items-center justify-between">
+											<div>
+												<span class="font-bold text-white print:text-slate-900 block truncate">{o.title}</span>
+												<span class="text-[10px] text-slate-500 font-mono">{o.date}</span>
+											</div>
+
+											{#if o.points != null}
+												<span class="font-bold text-sm text-purple-400 print:text-slate-900 font-mono shrink-0">{o.points} Pkt.</span>
 											{/if}
 										</div>
+
+										{#if o.studentNote}
+											<div class="mt-2 pt-1.5 border-t border-slate-800/80 text-[11px] text-amber-300">
+												<span class="font-semibold text-slate-400">Notiz:</span> {o.studentNote}
+											</div>
+										{/if}
+										{#if o.globalNote}
+											<div class="mt-1 text-[10px] text-slate-500 italic">
+												Info: {o.globalNote}
+											</div>
+										{/if}
 									</div>
 								{/each}
 							</div>
@@ -213,6 +286,46 @@
 			{/each}
 		</div>
 	</div>
+
+	<!-- Lesson Notes / Stundeneinträge -->
+	{#if data.lessonNotes && data.lessonNotes.length > 0}
+		<div class="space-y-4">
+			<h2 class="text-lg font-bold text-white print:text-slate-900 flex items-center space-x-2">
+				<BookOpen class="w-5 h-5 text-blue-400" />
+				<span>Notizen aus Unterrichtsstunden ({data.lessonNotes.length})</span>
+			</h2>
+
+			<div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+				{#each data.lessonNotes as ln}
+					<div class="p-4 rounded-2xl bg-slate-900 border border-slate-800 shadow-sm print:bg-white print:border-gray-200 space-y-2">
+						<div class="flex items-center justify-between text-xs">
+							<div class="flex items-center space-x-2">
+								<span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-950 text-blue-300 border border-blue-800">
+									{ln.courseSubject}
+								</span>
+								<span class="text-slate-400 font-mono text-[11px]">{ln.lessonDate}</span>
+							</div>
+							{#if ln.lessonTopic}
+								<span class="text-[11px] text-slate-400 truncate max-w-[220px]" title={ln.lessonTopic}>
+									Thema: {ln.lessonTopic}
+								</span>
+							{/if}
+						</div>
+
+						<p class="text-xs text-white print:text-slate-900 font-medium whitespace-pre-wrap leading-relaxed">
+							{ln.studentNote}
+						</p>
+
+						{#if ln.lessonGlobalNote}
+							<p class="text-[11px] text-slate-400 italic pt-1.5 border-t border-slate-800/80">
+								Stundennotiz: {ln.lessonGlobalNote}
+							</p>
+						{/if}
+					</div>
+				{/each}
+			</div>
+		</div>
+	{/if}
 
 	<!-- Notes / Elterngespräche Feed -->
 	<div class="space-y-4">
@@ -358,6 +471,104 @@
 						class="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold shadow-md shadow-blue-500/20"
 					>
 						Notiz speichern
+					</button>
+				</div>
+			</form>
+		</div>
+	</div>
+{/if}
+
+<!-- Modal: Schülerstammdaten bearbeiten -->
+{#if showEditStudentModal}
+	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm print:hidden">
+		<div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md p-6 space-y-4 shadow-2xl">
+			<div class="flex items-center justify-between pb-3 border-b border-slate-800">
+				<h3 class="text-lg font-bold text-white">Schülerdaten bearbeiten</h3>
+				<button type="button" onclick={() => (showEditStudentModal = false)} class="text-slate-400 hover:text-white">
+					<X class="w-5 h-5" />
+				</button>
+			</div>
+
+			<form
+				action="?/updateStudent"
+				method="POST"
+				use:enhance={() => async ({ result, update }) => {
+					await update();
+					if (result.type === 'success') showEditStudentModal = false;
+				}}
+				class="space-y-4"
+			>
+				<div>
+					<label for="editNachname" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
+						Nachname *
+					</label>
+					<input
+						id="editNachname"
+						name="lastName"
+						type="text"
+						required
+						bind:value={editLastName}
+						class="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white focus:ring-2 focus:ring-blue-500 text-sm"
+					/>
+				</div>
+
+				<div>
+					<label for="editVorname" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
+						Vorname *
+					</label>
+					<input
+						id="editVorname"
+						name="firstName"
+						type="text"
+						required
+						bind:value={editFirstName}
+						class="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white focus:ring-2 focus:ring-blue-500 text-sm"
+					/>
+				</div>
+
+				<div class="grid grid-cols-2 gap-3">
+					<div>
+						<label for="editCatalogNum" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
+							Katalognummer
+						</label>
+						<input
+							id="editCatalogNum"
+							name="catalogNumber"
+							type="number"
+							bind:value={editCatalogNumber}
+							placeholder="z.B. 1"
+							class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white focus:ring-2 focus:ring-blue-500 text-sm"
+						/>
+					</div>
+
+					<div>
+						<label for="editWebuntisId" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
+							WebUntis-ID
+						</label>
+						<input
+							id="editWebuntisId"
+							name="webuntisId"
+							type="text"
+							bind:value={editWebuntisId}
+							placeholder="z.B. 12345"
+							class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white focus:ring-2 focus:ring-blue-500 text-sm"
+						/>
+					</div>
+				</div>
+
+				<div class="flex items-center justify-end space-x-3 pt-3 border-t border-slate-800">
+					<button
+						type="button"
+						onclick={() => (showEditStudentModal = false)}
+						class="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-sm font-medium"
+					>
+						Abbrechen
+					</button>
+					<button
+						type="submit"
+						class="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold shadow-md shadow-blue-500/20 active:scale-95 transition"
+					>
+						Änderungen speichern
 					</button>
 				</div>
 			</form>

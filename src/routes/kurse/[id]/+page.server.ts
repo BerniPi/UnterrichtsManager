@@ -8,6 +8,7 @@ import { homeworkRepository } from '$lib/server/repositories/homework.repository
 import { participationRepository } from '$lib/server/repositories/participation.repository';
 import { gradingTemplateRepository } from '$lib/server/repositories/grading-template.repository';
 import { settingsRepository } from '$lib/server/repositories/settings.repository';
+import { lessonRepository } from '$lib/server/repositories/lesson.repository';
 import { evaluateCourseStudents } from '$lib/services/student-evaluator';
 import { generateWebUntisExcel, generateWebUntisCsv } from '$lib/services/export/webuntis';
 import { validateScale, type GradingThreshold } from '$lib/services/grading';
@@ -48,13 +49,16 @@ export const load: PageServerLoad = async ({ params, url }) => {
 	// 3. Observations
 	const observations = observationRepository.getByCourse(courseId);
 
-	// 4. Homework
+	// 4. Stundeneinträge (Lessons)
+	const lessons = lessonRepository.getByCourse(courseId);
+
+	// 5. Homework
 	const homeworks = homeworkRepository.getByCourse(courseId);
 
-	// 5. Early Warnings
+	// 6. Early Warnings
 	const earlyWarnings = earlyWarningRepository.getByCourse(courseId);
 
-	// 6. Grading Scale Templates
+	// 7. Grading Scale Templates
 	const gradingTemplates = gradingTemplateRepository.getAll();
 
 	return {
@@ -64,6 +68,7 @@ export const load: PageServerLoad = async ({ params, url }) => {
 		assessments,
 		selectedAssessment,
 		observations,
+		lessons,
 		homeworks,
 		earlyWarnings,
 		gradingTemplates,
@@ -143,6 +148,7 @@ export const actions: Actions = {
 		const maxPoints = parseFloat(form.get('maxPoints')?.toString() || '48');
 		const defaultReturnDays = settingsRepository.get('defaultReturnDays');
 		const returnDays = parseInt(form.get('returnDays')?.toString() || String(defaultReturnDays), 10);
+		const note = form.get('note')?.toString().trim() || null;
 
 		const validTypes = ['schularbeit', 'test', 'wiederholung'] as const;
 		if (!title || !type || !validTypes.includes(type as any) || !date || isNaN(maxPoints) || maxPoints <= 0) {
@@ -178,10 +184,21 @@ export const actions: Actions = {
 			date,
 			maxPoints,
 			gradingScale,
-			dueDate
+			dueDate,
+			note
 		});
 
 		return { success: true, createdAssessmentId: id };
+	},
+
+	updateAssessmentNote: async ({ request }) => {
+		const form = await request.formData();
+		const assessmentId = form.get('assessmentId')?.toString();
+		const note = form.get('note')?.toString().trim() || null;
+
+		if (!assessmentId) return fail(400, { success: false, message: 'Assessment-ID fehlt' });
+		assessmentRepository.updateGlobalNote(assessmentId, note);
+		return { success: true };
 	},
 
 	saveAssessmentScore: async ({ request }) => {
@@ -191,7 +208,7 @@ export const actions: Actions = {
 		const pointsRaw = form.get('points')?.toString();
 		const isAbsent = form.get('isAbsent') === 'true';
 		const isMadeUp = form.get('isMadeUp') === 'true';
-		const note = form.get('note')?.toString() || null;
+		const note = form.has('note') ? (form.get('note')?.toString().trim() || null) : undefined;
 
 		if (!assessmentId || !studentId) return fail(400, { success: false, message: 'Parameter fehlen' });
 
@@ -271,7 +288,7 @@ export const actions: Actions = {
 		const title = form.get('title')?.toString().trim();
 		const date = form.get('date')?.toString();
 		const maxPoints = parseFloat(form.get('maxPoints')?.toString() || '10');
-		const description = form.get('description')?.toString().trim() || null;
+		const note = form.get('note')?.toString().trim() || form.get('description')?.toString().trim() || null;
 
 		if (!title || !date || isNaN(maxPoints) || maxPoints <= 0) {
 			return fail(400, { success: false, message: 'Titel, Datum und gültige Max-Punkte (> 0) erforderlich' });
@@ -282,43 +299,61 @@ export const actions: Actions = {
 			title,
 			date,
 			maxPoints,
-			description
+			note,
+			description: note
 		});
 
 		return { success: true, createdObservationId: id };
+	},
+
+	updateObservationNote: async ({ request }) => {
+		const form = await request.formData();
+		const observationId = form.get('observationId')?.toString();
+		const note = form.get('note')?.toString().trim() || null;
+
+		if (!observationId) return fail(400, { success: false, message: 'Beobachtungs-ID fehlt' });
+		observationRepository.updateGlobalNote(observationId, note);
+		return { success: true };
 	},
 
 	saveObservationScore: async ({ request }) => {
 		const form = await request.formData();
 		const observationId = form.get('observationId')?.toString();
 		const studentId = form.get('studentId')?.toString();
+		const hasPoints = form.has('points');
+		const hasNote = form.has('note');
 		const pointsRaw = form.get('points')?.toString();
-		const note = form.get('note')?.toString().trim() || null;
+		const note = hasNote ? (form.get('note')?.toString().trim() || null) : undefined;
 
 		if (!observationId || !studentId) return fail(400, { success: false, message: 'Parameter fehlen' });
 
-		// Empty input removes the score instead of converting to 0
-		if (pointsRaw === null || pointsRaw === undefined || pointsRaw.trim() === '') {
+		let points: number | null | undefined = undefined;
+		if (hasPoints) {
+			if (pointsRaw === null || pointsRaw === undefined || pointsRaw.trim() === '') {
+				points = null;
+			} else {
+				points = parseFloat(pointsRaw);
+				if (isNaN(points) || points < 0) {
+					return fail(400, { success: false, message: 'Punkte dürfen nicht negativ sein' });
+				}
+				const obs = sqlite
+					.prepare('SELECT max_points FROM observations WHERE id = ?')
+					.get(observationId) as { max_points: number } | undefined;
+				if (obs && points > obs.max_points) {
+					return fail(400, {
+						success: false,
+						message: `Punkte (${points}) dürfen nicht höher sein als Maximalpunkte (${obs.max_points})`
+					});
+				}
+			}
+		}
+
+		// Empty input with no note removes the score
+		if (hasPoints && points === null && (!hasNote || !note)) {
 			observationRepository.deleteScore(observationId, studentId);
-			return { success: true };
+		} else {
+			observationRepository.saveScores(observationId, [{ studentId, points, note }]);
 		}
-
-		const points = parseFloat(pointsRaw);
-		if (isNaN(points) || points < 0) {
-			return fail(400, { success: false, message: 'Punkte dürfen nicht negativ sein' });
-		}
-
-		const obs = sqlite
-			.prepare('SELECT max_points FROM observations WHERE id = ?')
-			.get(observationId) as { max_points: number } | undefined;
-		if (obs && points > obs.max_points) {
-			return fail(400, {
-				success: false,
-				message: `Punkte (${points}) dürfen nicht höher sein als Maximalpunkte (${obs.max_points})`
-			});
-		}
-
-		observationRepository.saveScores(observationId, [{ studentId, points, note }]);
 		return { success: true };
 	},
 
@@ -328,6 +363,54 @@ export const actions: Actions = {
 		if (!observationId) return fail(400, { success: false, message: 'Beobachtungs-ID fehlt' });
 
 		observationRepository.delete(observationId);
+		return { success: true };
+	},
+
+	createLesson: async ({ request, params }) => {
+		const form = await request.formData();
+		const date = form.get('date')?.toString() || new Date().toISOString().slice(0, 10);
+		const topic = form.get('topic')?.toString().trim() || null;
+		const note = form.get('note')?.toString().trim() || null;
+
+		const id = lessonRepository.create({
+			courseId: params.id,
+			date,
+			topic,
+			note
+		});
+
+		return { success: true, createdLessonId: id };
+	},
+
+	updateLessonGlobalNote: async ({ request }) => {
+		const form = await request.formData();
+		const lessonId = form.get('lessonId')?.toString();
+		const topic = form.has('topic') ? (form.get('topic')?.toString().trim() || null) : undefined;
+		const note = form.has('note') ? (form.get('note')?.toString().trim() || null) : undefined;
+		const date = form.get('date')?.toString() || undefined;
+
+		if (!lessonId) return fail(400, { success: false, message: 'Stundeneintrag-ID fehlt' });
+		lessonRepository.updateGlobal(lessonId, { topic, note, date });
+		return { success: true };
+	},
+
+	saveLessonStudentNote: async ({ request }) => {
+		const form = await request.formData();
+		const lessonId = form.get('lessonId')?.toString();
+		const studentId = form.get('studentId')?.toString();
+		const note = form.get('note')?.toString().trim() || null;
+
+		if (!lessonId || !studentId) return fail(400, { success: false, message: 'Parameter fehlen' });
+		lessonRepository.saveStudentNote(lessonId, studentId, note);
+		return { success: true };
+	},
+
+	deleteLesson: async ({ request }) => {
+		const form = await request.formData();
+		const lessonId = form.get('lessonId')?.toString();
+		if (!lessonId) return fail(400, { success: false, message: 'Stundeneintrag-ID fehlt' });
+
+		lessonRepository.delete(lessonId);
 		return { success: true };
 	},
 

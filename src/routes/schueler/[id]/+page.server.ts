@@ -10,6 +10,8 @@ import * as schema from '$lib/server/db/schema';
 import { eq } from 'drizzle-orm';
 import crypto from 'node:crypto';
 
+import { lessonRepository } from '$lib/server/repositories/lesson.repository';
+
 export const load: PageServerLoad = async ({ params }) => {
 	const studentId = params.id;
 	const student = studentRepository.getById(studentId);
@@ -63,9 +65,11 @@ export const load: PageServerLoad = async ({ params }) => {
 				a.title,
 				a.type,
 				a.date,
+				a.note as globalNote,
 				a.max_points as maxPoints,
 				ar.points,
 				ar.grade,
+				ar.note as studentNote,
 				ar.is_absent as isAbsent,
 				ret.due_date as dueDate,
 				ret.is_signed as isSigned,
@@ -79,6 +83,30 @@ export const load: PageServerLoad = async ({ params }) => {
 			)
 			.all(studentId, studentId, c.id) as any[];
 
+		// Fetch observations for this student in this course
+		const observations = sqlite
+			.prepare(
+				`
+			SELECT 
+				o.title,
+				o.date,
+				o.note as globalNote,
+				os.points,
+				os.note as studentNote
+			FROM observations o
+			JOIN observation_scores os ON os.observation_id = o.id AND os.student_id = ?
+			WHERE o.course_id = ?
+			ORDER BY o.date DESC
+		`
+			)
+			.all(studentId, c.id) as Array<{
+			title: string;
+			date: string;
+			globalNote: string | null;
+			points: number | null;
+			studentNote: string | null;
+		}>;
+
 		return {
 			courseId: c.id,
 			courseSubject: c.subject,
@@ -87,7 +115,8 @@ export const load: PageServerLoad = async ({ params }) => {
 				...a,
 				isAbsent: Boolean(a.isAbsent),
 				isSigned: Boolean(a.isSigned)
-			}))
+			})),
+			observations
 		};
 	});
 
@@ -100,12 +129,16 @@ export const load: PageServerLoad = async ({ params }) => {
 	// Full participation history
 	const participationHistory = participationRepository.getHistoryForStudent(studentId);
 
+	// Stundeneintrag / Lesson notes history
+	const lessonNotes = lessonRepository.getStudentHistory(studentId);
+
 	return {
 		student,
 		courseEvaluations,
 		notes,
 		earlyWarnings,
-		participationHistory
+		participationHistory,
+		lessonNotes
 	};
 };
 
@@ -140,6 +173,28 @@ export const actions: Actions = {
 		if (noteId) {
 			noteRepository.delete(noteId);
 		}
+		return { success: true };
+	},
+
+	updateStudent: async ({ request, params }) => {
+		const form = await request.formData();
+		const firstName = form.get('firstName')?.toString().trim();
+		const lastName = form.get('lastName')?.toString().trim();
+		const catalogNumberStr = form.get('catalogNumber')?.toString().trim();
+		const catalogNumber = catalogNumberStr ? parseInt(catalogNumberStr, 10) : null;
+		const webuntisId = form.get('webuntisId')?.toString().trim() || null;
+
+		if (!firstName || !lastName) {
+			return { success: false, message: 'Vorname und Nachname sind erforderlich' };
+		}
+
+		studentRepository.update(params.id, {
+			firstName,
+			lastName,
+			catalogNumber,
+			webuntisId
+		});
+
 		return { success: true };
 	}
 };

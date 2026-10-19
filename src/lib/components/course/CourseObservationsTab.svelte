@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import { Plus, Eye, CheckCircle2, X, Trash2 } from '@lucide/svelte';
+	import { Plus, Eye, CheckCircle2, X, Trash2, FileText } from '@lucide/svelte';
 
 	interface Props {
 		course: any;
@@ -155,13 +155,47 @@
 			</form>
 		</div>
 
+		<!-- GLOBALE NOTIZ ZUR BEOBACHTUNG -->
+		<div class="p-3.5 bg-slate-900 border border-slate-800 rounded-2xl shadow-sm space-y-2">
+			<div class="flex items-center justify-between text-xs">
+				<span class="font-bold uppercase tracking-wider text-slate-300 flex items-center space-x-1.5">
+					<FileText class="w-4 h-4 text-blue-400" />
+					<span>Globale Notiz zur Beobachtung:</span>
+				</span>
+			</div>
+			<form
+				action="?/updateObservationNote&tab=beobachtungen"
+				method="POST"
+				use:enhance={() => async ({ update }) => {
+					await update();
+					showToast('Globale Notiz gespeichert');
+				}}
+				class="flex items-center gap-2"
+			>
+				<input type="hidden" name="observationId" value={selectedObs.id} />
+				<input
+					type="text"
+					name="note"
+					bind:value={selectedObs.note}
+					placeholder="Globale Notiz erfassen (z.B. Kopfrechnen, Stationenarbeit, Schwerpunkte)..."
+					class="flex-1 px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-700 text-white text-xs focus:ring-2 focus:ring-blue-500"
+				/>
+				<button
+					type="submit"
+					class="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shrink-0 transition active:scale-95"
+				>
+					Speichern
+				</button>
+			</form>
+		</div>
+
 		<!-- Observation Points Table -->
 		<div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-lg overflow-x-auto">
 			<table class="w-full text-left border-collapse text-xs">
 				<thead>
 					<tr class="bg-slate-950/80 text-slate-400 border-b border-slate-800 font-semibold uppercase tracking-wider text-[11px]">
 						<th class="py-3 px-3 w-12 text-center">Kat.</th>
-						<th class="py-3 px-4">Schüler</th>
+						<th class="py-3 px-4 w-52">Schüler</th>
 						<th class="py-3 px-4 w-36 text-center">Punkte (max. {selectedObs.maxPoints})</th>
 						<th class="py-3 px-4">Notiz / Bemerkung</th>
 					</tr>
@@ -188,6 +222,7 @@
 								>
 									<input type="hidden" name="observationId" value={selectedObs.id} />
 									<input type="hidden" name="studentId" value={s.studentId} />
+									<input type="hidden" name="note" value={s.note ?? ''} />
 									<input
 										id="obs-points-input-{idx}"
 										type="number"
@@ -203,8 +238,31 @@
 								</form>
 							</td>
 
-							<td class="py-3 px-4 text-slate-400">
-								{s.note || '–'}
+							<td class="py-2.5 px-4">
+								<form
+									action="?/saveObservationScore&tab=beobachtungen"
+									method="POST"
+									use:enhance={() => {
+										return async ({ result }) => {
+											if (result.type === 'success') {
+												showToast(`Notiz für ${s.lastName} gespeichert`);
+											}
+										};
+									}}
+									class="w-full"
+								>
+									<input type="hidden" name="observationId" value={selectedObs.id} />
+									<input type="hidden" name="studentId" value={s.studentId} />
+									<input type="hidden" name="points" value={s.points ?? ''} />
+									<input
+										type="text"
+										name="note"
+										bind:value={s.note}
+										placeholder="Notiz zum Schüler..."
+										onchange={(e) => (e.target as HTMLInputElement).form?.requestSubmit()}
+										class="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-white text-xs placeholder:text-slate-600 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+									/>
+								</form>
 							</td>
 						</tr>
 					{/each}
@@ -293,6 +351,20 @@
 							class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white text-sm focus:ring-2 focus:ring-blue-500 font-bold"
 						/>
 					</div>
+				</div>
+
+				<div>
+					<label for="obsNote" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
+						Globale Notiz / Beschreibung (optional)
+					</label>
+					<textarea
+						id="obsNote"
+						name="note"
+						rows="2"
+						bind:value={description}
+						placeholder="Kriterien, Schwerpunkte, Bemerkungen..."
+						class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white text-xs focus:ring-2 focus:ring-blue-500"
+					></textarea>
 				</div>
 
 				<div class="flex items-center justify-end space-x-3 pt-3 border-t border-slate-800">

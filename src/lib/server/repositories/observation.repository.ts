@@ -10,6 +10,7 @@ export interface ObservationWithScores {
 	date: string;
 	maxPoints: number;
 	description: string | null;
+	note: string | null;
 	scores: Array<{
 		studentId: string;
 		firstName: string;
@@ -21,11 +22,18 @@ export interface ObservationWithScores {
 }
 
 export const observationRepository = {
-	getByCourse(courseId: string) {
+	getByCourse(courseId: string): ObservationWithScores[] {
 		const observations = sqlite
 			.prepare(
 				`
-			SELECT id, course_id as courseId, title, date, max_points as maxPoints, description
+			SELECT 
+				id, 
+				course_id as courseId, 
+				title, 
+				date, 
+				max_points as maxPoints, 
+				description,
+				COALESCE(note, description) as note
 			FROM observations
 			WHERE course_id = ?
 			ORDER BY date DESC
@@ -38,6 +46,7 @@ export const observationRepository = {
 			date: string;
 			maxPoints: number;
 			description: string | null;
+			note: string | null;
 		}>;
 
 		return observations.map((obs) => {
@@ -74,8 +83,10 @@ export const observationRepository = {
 		date: string;
 		maxPoints: number;
 		description?: string | null;
+		note?: string | null;
 	}): string {
 		const id = crypto.randomUUID();
+		const finalNote = (data.note || data.description || '').trim() || null;
 		db.insert(schema.observations)
 			.values({
 				id,
@@ -83,26 +94,38 @@ export const observationRepository = {
 				title: data.title,
 				date: data.date,
 				maxPoints: data.maxPoints,
-				description: data.description || null
+				description: finalNote,
+				note: finalNote
 			})
 			.run();
 		return id;
 	},
 
+	updateGlobalNote(observationId: string, note: string | null): void {
+		const clean = note ? note.trim() : null;
+		db.update(schema.observations)
+			.set({ note: clean, description: clean })
+			.where(eq(schema.observations.id, observationId))
+			.run();
+	},
+
 	saveScores(
 		observationId: string,
-		scores: Array<{ studentId: string; points: number; note?: string | null }>
+		scores: Array<{ studentId: string; points?: number | null; note?: string | null }>
 	): void {
 		for (const item of scores) {
 			const existing = sqlite
 				.prepare(
-					'SELECT id FROM observation_scores WHERE observation_id = ? AND student_id = ?'
+					'SELECT id, points, note FROM observation_scores WHERE observation_id = ? AND student_id = ?'
 				)
-				.get(observationId, item.studentId) as { id: string } | undefined;
+				.get(observationId, item.studentId) as { id: string; points: number; note: string | null } | undefined;
+
+			const points = item.points !== undefined && item.points !== null ? item.points : (existing ? existing.points : 0);
+			const cleanNote = item.note !== undefined ? (item.note ? item.note.trim() : null) : (existing ? existing.note : null);
 
 			if (existing) {
 				db.update(schema.observationScores)
-					.set({ points: item.points, note: item.note || null })
+					.set({ points, note: cleanNote })
 					.where(eq(schema.observationScores.id, existing.id))
 					.run();
 			} else {
@@ -111,8 +134,8 @@ export const observationRepository = {
 						id: crypto.randomUUID(),
 						observationId,
 						studentId: item.studentId,
-						points: item.points,
-						note: item.note || null
+						points,
+						note: cleanNote
 					})
 					.run();
 			}

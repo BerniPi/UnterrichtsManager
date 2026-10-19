@@ -104,7 +104,8 @@ export function initDb() {
 			title TEXT NOT NULL,
 			date TEXT NOT NULL,
 			max_points REAL NOT NULL,
-			description TEXT
+			description TEXT,
+			note TEXT
 		);
 
 		CREATE TABLE IF NOT EXISTS observation_scores (
@@ -123,7 +124,8 @@ export function initDb() {
 			date TEXT NOT NULL,
 			max_points REAL NOT NULL,
 			grading_scale TEXT NOT NULL,
-			is_counted INTEGER NOT NULL DEFAULT 1
+			is_counted INTEGER NOT NULL DEFAULT 1,
+			note TEXT
 		);
 
 		CREATE TABLE IF NOT EXISTS assessment_results (
@@ -230,6 +232,23 @@ export function initDb() {
 			created_at INTEGER NOT NULL
 		);
 
+		CREATE TABLE IF NOT EXISTS lesson_entries (
+			id TEXT PRIMARY KEY,
+			course_id TEXT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+			date TEXT NOT NULL,
+			topic TEXT,
+			note TEXT,
+			created_at INTEGER NOT NULL
+		);
+
+		CREATE TABLE IF NOT EXISTS lesson_student_notes (
+			id TEXT PRIMARY KEY,
+			lesson_id TEXT NOT NULL REFERENCES lesson_entries(id) ON DELETE CASCADE,
+			student_id TEXT NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+			note TEXT NOT NULL,
+			created_at INTEGER NOT NULL
+		);
+
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_grading_scale_templates_default 
 		ON grading_scale_templates(is_default) WHERE is_default = 1;
 
@@ -251,6 +270,9 @@ export function initDb() {
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_participation_entries_unique
 		ON participation_entries(course_id, student_id, year, week_number);
 
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_lesson_student_notes_unique
+		ON lesson_student_notes(lesson_id, student_id);
+
 		CREATE INDEX IF NOT EXISTS idx_students_class ON students(class_id);
 		CREATE INDEX IF NOT EXISTS idx_courses_class ON courses(class_id);
 		CREATE INDEX IF NOT EXISTS idx_courses_school_year ON courses(school_year_id);
@@ -258,7 +280,18 @@ export function initDb() {
 		CREATE INDEX IF NOT EXISTS idx_homeworks_course ON homeworks(course_id);
 		CREATE INDEX IF NOT EXISTS idx_observations_course ON observations(course_id);
 		CREATE INDEX IF NOT EXISTS idx_early_warnings_course ON early_warnings(course_id);
+		CREATE INDEX IF NOT EXISTS idx_lesson_entries_course ON lesson_entries(course_id);
+		CREATE INDEX IF NOT EXISTS idx_lesson_entries_date ON lesson_entries(date);
 	`);
+
+	// Migrations for existing databases
+	try {
+		sqlite.exec(`ALTER TABLE assessments ADD COLUMN note TEXT;`);
+	} catch (e) {}
+
+	try {
+		sqlite.exec(`ALTER TABLE observations ADD COLUMN note TEXT;`);
+	} catch (e) {}
 
 	// Auto-seed default templates if none exist
 	try {

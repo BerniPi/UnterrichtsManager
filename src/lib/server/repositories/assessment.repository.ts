@@ -13,6 +13,7 @@ export interface AssessmentWithStats {
 	maxPoints: number;
 	gradingScale: string;
 	isCounted: boolean;
+	note: string | null;
 	totalStudents: number;
 	gradedCount: number;
 	averagePoints: number | null;
@@ -36,6 +37,7 @@ export const assessmentRepository = {
 				a.max_points as maxPoints,
 				a.grading_scale as gradingScale,
 				a.is_counted as isCounted,
+				a.note,
 				COUNT(ar.student_id) as totalStudents,
 				COUNT(CASE WHEN ar.points IS NOT NULL THEN 1 END) as gradedCount,
 				AVG(ar.points) as averagePoints,
@@ -74,7 +76,8 @@ export const assessmentRepository = {
 				a.date,
 				a.max_points as maxPoints,
 				a.grading_scale as gradingScale,
-				a.is_counted as isCounted
+				a.is_counted as isCounted,
+				a.note
 			FROM assessments a
 			JOIN courses c ON a.course_id = c.id
 			JOIN classes cl ON c.class_id = cl.id
@@ -138,6 +141,7 @@ export const assessmentRepository = {
 		maxPoints: number;
 		gradingScale?: GradingThreshold[];
 		dueDate?: string; // Standard-Rückgabefrist (z.B. 7 Tage später)
+		note?: string | null;
 	}): string {
 		return sqlite.transaction(() => {
 			const course = sqlite.prepare('SELECT class_id FROM courses WHERE id = ?').get(data.courseId) as
@@ -159,7 +163,8 @@ export const assessmentRepository = {
 					date: data.date,
 					maxPoints: data.maxPoints,
 					gradingScale: scaleJson,
-					isCounted: true
+					isCounted: true,
+					note: data.note ? data.note.trim() : null
 				})
 				.run();
 
@@ -180,7 +185,8 @@ export const assessmentRepository = {
 						points: null,
 						grade: null,
 						isAbsent: false,
-						isMadeUp: false
+						isMadeUp: false,
+						note: null
 					})
 					.run();
 
@@ -202,6 +208,13 @@ export const assessmentRepository = {
 		})();
 	},
 
+	updateGlobalNote(assessmentId: string, note: string | null): void {
+		db.update(schema.assessments)
+			.set({ note: note ? note.trim() : null })
+			.where(eq(schema.assessments.id, assessmentId))
+			.run();
+	},
+
 	updateResult(
 		assessmentId: string,
 		studentId: string,
@@ -218,8 +231,10 @@ export const assessmentRepository = {
 		const grade = isAbsent ? null : calculateGradeFromPoints(points, assessment.max_points, scale);
 
 		const existing = sqlite
-			.prepare('SELECT id FROM assessment_results WHERE assessment_id = ? AND student_id = ?')
-			.get(assessmentId, studentId) as { id: string } | undefined;
+			.prepare('SELECT id, note, points FROM assessment_results WHERE assessment_id = ? AND student_id = ?')
+			.get(assessmentId, studentId) as { id: string; note: string | null; points: number | null } | undefined;
+
+		const cleanNote = note !== undefined ? (note ? note.trim() : null) : (existing ? existing.note : null);
 
 		if (existing) {
 			db.update(schema.assessmentResults)
@@ -228,7 +243,7 @@ export const assessmentRepository = {
 					grade,
 					isAbsent,
 					isMadeUp,
-					note
+					note: cleanNote
 				})
 				.where(eq(schema.assessmentResults.id, existing.id))
 				.run();
@@ -242,7 +257,7 @@ export const assessmentRepository = {
 					grade,
 					isAbsent,
 					isMadeUp,
-					note
+					note: cleanNote
 				})
 				.run();
 		}
