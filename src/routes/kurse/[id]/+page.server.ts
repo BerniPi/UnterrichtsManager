@@ -481,6 +481,47 @@ export const actions: Actions = {
 		return { success: true };
 	},
 
+	setHomeworkStatus: async ({ request }) => {
+		const form = await request.formData();
+		const homeworkId = form.get('homeworkId')?.toString();
+		const studentId = form.get('studentId')?.toString();
+		const status = form.get('status')?.toString() as 'done' | 'partial' | 'forgotten';
+
+		if (!homeworkId || !studentId || !status) {
+			return fail(400, { success: false, message: 'Fehlende Felder' });
+		}
+
+		homeworkRepository.toggleStatus(homeworkId, studentId, status);
+		return { success: true };
+	},
+
+	markAllHomeworkDone: async ({ request, params }) => {
+		const form = await request.formData();
+		const homeworkId = form.get('homeworkId')?.toString();
+		if (!homeworkId) return fail(400, { success: false, message: 'Hausübung fehlt' });
+
+		homeworkRepository.markAllDone(homeworkId, params.id);
+		return { success: true };
+	},
+
+	resetHomeworkStatuses: async ({ request }) => {
+		const form = await request.formData();
+		const homeworkId = form.get('homeworkId')?.toString();
+		if (!homeworkId) return fail(400, { success: false, message: 'Hausübung fehlt' });
+
+		homeworkRepository.resetAll(homeworkId);
+		return { success: true };
+	},
+
+	deleteHomework: async ({ request }) => {
+		const form = await request.formData();
+		const homeworkId = form.get('homeworkId')?.toString();
+		if (!homeworkId) return fail(400, { success: false, message: 'Hausübung fehlt' });
+
+		homeworkRepository.delete(homeworkId);
+		return { success: true };
+	},
+
 	updateWeights: async ({ request, params }) => {
 		const form = await request.formData();
 		const weightSchularbeiten = parseFloat(form.get('weightSchularbeiten')?.toString() || '40');

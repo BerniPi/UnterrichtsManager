@@ -5,11 +5,12 @@
 		BookOpen,
 		Award,
 		Eye,
-		Home,
-		AlertTriangle,
-		Sliders,
+		House,
+		TriangleAlert,
+		SlidersHorizontal,
 		Smartphone,
-		FileSpreadsheet
+		FileSpreadsheet,
+		ChevronDown
 	} from '@lucide/svelte';
 
 	import CourseNotenTab from '$lib/components/course/CourseNotenTab.svelte';
@@ -39,15 +40,25 @@
 
 	let { data }: Props = $props();
 
-	const tabs = [
-		{ id: 'noten', label: 'Noten & Vorschlag', icon: FileSpreadsheet },
-		{ id: 'stunden', label: 'Stundeneinträge', icon: BookOpen },
+	let showMoreDropdown = $state(false);
+
+	// Primary 4 tabs: Noten & Übersicht, Hausübung, Tests & Schularbeiten, Beobachtungen
+	const mainTabs = [
+		{ id: 'noten', label: 'Noten & Übersicht', icon: FileSpreadsheet },
+		{ id: 'hausuebungen', label: 'Hausübung', icon: House },
 		{ id: 'tests', label: 'Tests & Schularbeiten', icon: Award },
-		{ id: 'beobachtungen', label: 'Beobachtungen', icon: Eye },
-		{ id: 'hausuebungen', label: 'Hausübungen', icon: Home },
-		{ id: 'fruehwarnungen', label: 'Frühwarnungen', icon: AlertTriangle },
-		{ id: 'gewichtung', label: 'Gewichtung', icon: Sliders }
+		{ id: 'beobachtungen', label: 'Beobachtungen', icon: Eye }
 	];
+
+	// Secondary tabs under 'Weiteres'
+	const moreTabs = [
+		{ id: 'stunden', label: 'Stundeneinträge & Lehrstoff', shortLabel: 'Stunden', icon: BookOpen },
+		{ id: 'fruehwarnungen', label: 'Frühwarnungen (§19 SchUG)', shortLabel: 'Frühwarnungen', icon: TriangleAlert },
+		{ id: 'gewichtung', label: 'Gewichtung & Notenschlüssel', shortLabel: 'Gewichtung', icon: SlidersHorizontal }
+	];
+
+	const isMoreTabActive = $derived(moreTabs.some((t) => t.id === data.activeTab));
+	const activeMoreItem = $derived(moreTabs.find((t) => t.id === data.activeTab));
 </script>
 
 <svelte:head>
@@ -91,25 +102,67 @@
 	</div>
 
 	<!-- Navigation Tabs -->
-	<div class="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none border-b border-slate-800">
-		{#each tabs as tab}
+	<div class="flex items-center gap-1.5 overflow-x-visible pb-1 scrollbar-none border-b border-slate-800 relative">
+		{#each mainTabs as tab}
 			{@const Icon = tab.icon}
 			<a
 				href="/kurse/{data.course.id}?tab={tab.id}"
-				class="px-3.5 py-2 rounded-xl text-xs font-semibold transition flex items-center space-x-2 shrink-0 {data.activeTab === tab.id ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20' : 'text-slate-400 hover:text-white hover:bg-slate-900'}"
+				class="px-4 py-2.5 rounded-xl text-xs font-semibold transition flex items-center space-x-2 shrink-0 {data.activeTab === tab.id ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20' : 'text-slate-400 hover:text-white hover:bg-slate-900'}"
 			>
 				<Icon class="w-4 h-4" />
 				<span>{tab.label}</span>
 			</a>
 		{/each}
+
+		<!-- Dropdown: Weiteres -->
+		<div class="relative shrink-0">
+			<button
+				type="button"
+				onclick={() => (showMoreDropdown = !showMoreDropdown)}
+				class="px-3.5 py-2.5 rounded-xl text-xs font-semibold transition flex items-center space-x-1.5 cursor-pointer {isMoreTabActive ? 'bg-blue-950 text-blue-300 border border-blue-800 shadow-md' : 'text-slate-400 hover:text-white hover:bg-slate-900 border border-transparent'}"
+			>
+				<span>{activeMoreItem ? `Weiteres: ${activeMoreItem.shortLabel}` : 'Weiteres'}</span>
+				<ChevronDown class="w-3.5 h-3.5 transition duration-200 {showMoreDropdown ? 'rotate-180' : ''}" />
+			</button>
+
+			{#if showMoreDropdown}
+				<button
+					type="button"
+					aria-label="Menü schließen"
+					class="fixed inset-0 z-30 bg-transparent border-0 cursor-default"
+					onclick={() => (showMoreDropdown = false)}
+				></button>
+
+				<div class="absolute left-0 sm:right-0 sm:left-auto top-full mt-2 z-40 w-64 rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl p-2 space-y-1 backdrop-blur-md">
+					<div class="px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+						Zusätzliche Bereiche
+					</div>
+					{#each moreTabs as tab}
+						{@const Icon = tab.icon}
+						<a
+							href="/kurse/{data.course.id}?tab={tab.id}"
+							onclick={() => (showMoreDropdown = false)}
+							class="w-full px-3 py-2.5 rounded-xl text-xs font-semibold transition flex items-center space-x-2.5 {data.activeTab === tab.id ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20' : 'text-slate-300 hover:text-white hover:bg-slate-800'}"
+						>
+							<Icon class="w-4 h-4 text-slate-400 {data.activeTab === tab.id ? 'text-white' : ''}" />
+							<span>{tab.label}</span>
+						</a>
+					{/each}
+				</div>
+			{/if}
+		</div>
 	</div>
 
 	<!-- Tab Content Components -->
 	<div>
 		{#if data.activeTab === 'noten'}
 			<CourseNotenTab course={data.course} students={data.evaluatedStudents} />
-		{:else if data.activeTab === 'stunden'}
-			<CourseLessonsTab course={data.course} lessons={data.lessons || []} />
+		{:else if data.activeTab === 'hausuebungen'}
+			<CourseHomeworkTab
+				course={data.course}
+				homeworks={data.homeworks}
+				students={data.evaluatedStudents}
+			/>
 		{:else if data.activeTab === 'tests'}
 			<CourseTestsTab
 				course={data.course}
@@ -120,8 +173,8 @@
 			/>
 		{:else if data.activeTab === 'beobachtungen'}
 			<CourseObservationsTab course={data.course} observations={data.observations} />
-		{:else if data.activeTab === 'hausuebungen'}
-			<CourseHomeworkTab course={data.course} homeworks={data.homeworks} />
+		{:else if data.activeTab === 'stunden'}
+			<CourseLessonsTab course={data.course} lessons={data.lessons || []} />
 		{:else if data.activeTab === 'fruehwarnungen'}
 			<CourseEarlyWarningsTab
 				course={data.course}

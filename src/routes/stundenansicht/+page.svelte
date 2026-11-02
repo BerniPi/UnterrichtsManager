@@ -146,13 +146,26 @@
 
 		<!-- Active Homework Context (if any) -->
 		{#if data.activeHomework}
-			<div class="px-4 py-2.5 bg-slate-900/60 border border-slate-800/80 rounded-xl flex items-center justify-between text-xs text-slate-300">
+			<div class="px-4 py-2.5 bg-slate-900/60 border border-slate-800/80 rounded-xl flex flex-wrap items-center justify-between gap-2 text-xs text-slate-300">
 				<div class="flex items-center space-x-2">
 					<span class="font-semibold text-blue-400">Aktuelle HÜ:</span>
 					<span class="text-white font-medium">{data.activeHomework.title}</span>
 					<span class="text-slate-500">(Fällig: {data.activeHomework.due_date})</span>
 				</div>
-				<span class="text-slate-400 hidden sm:inline">HÜ-Status direkt in der Zeile erfassen</span>
+				<div class="flex items-center space-x-2">
+					<form action="?/markAllHomeworkDone" method="POST" use:enhance>
+						<input type="hidden" name="homeworkId" value={data.activeHomework.id} />
+						<input type="hidden" name="courseId" value={data.selectedCourse.id} />
+						<button
+							type="submit"
+							class="px-2.5 py-1 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 font-semibold text-xs flex items-center space-x-1.5 transition active:scale-95 cursor-pointer"
+							title="Setzt alle Schüler dieser Klasse für diese HÜ auf 'Erledigt'"
+						>
+							<Check class="w-3.5 h-3.5 text-emerald-400" />
+							<span>Alle als erledigt markieren</span>
+						</button>
+					</form>
+				</div>
 			</div>
 		{/if}
 

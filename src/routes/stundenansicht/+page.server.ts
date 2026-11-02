@@ -6,6 +6,7 @@ import crypto from 'node:crypto';
 import { calculateSnoozeDate } from '$lib/services/reminders';
 import { getIsoWeekAndYear } from '$lib/services/dates';
 import { lessonRepository } from '$lib/server/repositories/lesson.repository';
+import { homeworkRepository } from '$lib/server/repositories/homework.repository';
 
 export const load: PageServerLoad = async ({ url, parent }) => {
 	const layoutData = await parent();
@@ -282,26 +283,20 @@ export const actions: Actions = {
 			return { success: false };
 		}
 
-		const existing = sqlite
-			.prepare('SELECT id, status FROM homework_statuses WHERE homework_id = ? AND student_id = ?')
-			.get(homeworkId, studentId) as { id: string; status: string } | undefined;
+		homeworkRepository.toggleStatus(homeworkId, studentId, status);
+		return { success: true };
+	},
 
-		if (existing) {
-			db.update(schema.homeworkStatuses)
-				.set({ status })
-				.where(eq(schema.homeworkStatuses.id, existing.id))
-				.run();
-		} else {
-			db.insert(schema.homeworkStatuses)
-				.values({
-					id: crypto.randomUUID(),
-					homeworkId,
-					studentId,
-					status
-				})
-				.run();
+	markAllHomeworkDone: async ({ request }) => {
+		const form = await request.formData();
+		const homeworkId = form.get('homeworkId')?.toString();
+		const courseId = form.get('courseId')?.toString();
+
+		if (!homeworkId || !courseId) {
+			return { success: false };
 		}
 
+		homeworkRepository.markAllDone(homeworkId, courseId);
 		return { success: true };
 	},
 
