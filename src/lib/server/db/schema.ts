@@ -53,7 +53,8 @@ export const students = sqliteTable('students', {
 	webuntisId: text('webuntis_id'),
 	catalogNumber: integer('catalog_number'), // Katalognummer
 	status: text('status').notNull().default('active'), // 'active' | 'inactive'
-	notes: text('notes')
+	notes: text('notes'),
+	schkz: text('schkz') // Schülerkennzahl aus BGBB Admin (stabiler Schlüssel)
 });
 
 export const courses = sqliteTable('courses', {

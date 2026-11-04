@@ -10,7 +10,8 @@
 		Download,
 		UploadCloud,
 		CheckCircle2,
-		AlertTriangle
+		AlertTriangle,
+		Link2
 	} from '@lucide/svelte';
 	import GradingTemplatesManager from '$lib/components/assessments/GradingTemplatesManager.svelte';
 
@@ -24,6 +25,7 @@
 			emailSummaryEnabled: boolean;
 			pushSubscriptionsCount: number;
 			gradingTemplates: Array<any>;
+			bgbb: { apiUrl: string; apiKeySet: boolean; fromEnv: boolean };
 		};
 		form?: any;
 	}
@@ -180,6 +182,88 @@
 				</button>
 			</div>
 		</form>
+	</div>
+
+	<!-- Section: Anbindung BGBB Admin (Schülerimport) -->
+	<div class="p-6 bg-slate-900 border border-slate-800 rounded-2xl shadow-sm space-y-4">
+		<h2 class="text-base font-bold text-white flex items-center space-x-2">
+			<Link2 class="w-5 h-5 text-blue-400" />
+			<span>Anbindung BGBB Admin (Schülerimport)</span>
+		</h2>
+
+		<p class="text-xs text-slate-400">
+			Schülerlisten können unter „Klassen“ direkt aus BGBB Admin übernommen werden. Dafür in BGBB Admin einen API-Key mit
+			Leserecht („read“) anlegen und hier eintragen. Übernommen werden nur Vorname, Familienname und SchKz.
+		</p>
+
+		{#if form?.bgbbError}
+			<div class="p-3 bg-red-950/90 border border-red-800 text-red-200 text-xs rounded-xl flex items-center space-x-2">
+				<AlertTriangle class="w-4 h-4 text-red-400 shrink-0" />
+				<span>{form.bgbbError}</span>
+			</div>
+		{:else if form?.bgbbMessage}
+			<div class="p-3 bg-emerald-950/90 border border-emerald-800 text-emerald-200 text-xs rounded-xl flex items-center space-x-2">
+				<CheckCircle2 class="w-4 h-4 text-emerald-400 shrink-0" />
+				<span>{form.bgbbMessage}</span>
+			</div>
+		{/if}
+
+		{#if data.bgbb.fromEnv}
+			<p class="text-xs text-slate-300">
+				Eingerichtet über Umgebungsvariablen (<code>BGBB_API_URL</code>, <code>BGBB_API_KEY</code>): <strong>{data.bgbb.apiUrl}</strong>
+			</p>
+		{:else}
+			<form action="?/updateBgbbSettings" method="POST" use:enhance={() => async ({ update }) => update({ reset: false })} class="space-y-4">
+				<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+					<div>
+						<label for="bgbbUrl" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
+							Adresse von BGBB Admin
+						</label>
+						<input
+							id="bgbbUrl"
+							type="url"
+							name="bgbbApiUrl"
+							value={data.bgbb.apiUrl}
+							placeholder="https://admin.example.at"
+							class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white text-sm focus:ring-2 focus:ring-blue-500"
+						/>
+					</div>
+					<div>
+						<label for="bgbbKey" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
+							API-Key
+						</label>
+						<input
+							id="bgbbKey"
+							type="password"
+							name="bgbbApiKey"
+							autocomplete="off"
+							placeholder={data.bgbb.apiKeySet ? 'gespeichert – leer lassen zum Beibehalten' : 'API-Key aus BGBB Admin'}
+							class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white text-sm focus:ring-2 focus:ring-blue-500"
+						/>
+					</div>
+				</div>
+
+				<div class="flex justify-end">
+					<button
+						type="submit"
+						class="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs shadow-md shadow-blue-500/20 active:scale-95 transition"
+					>
+						Anbindung speichern
+					</button>
+				</div>
+			</form>
+		{/if}
+
+		{#if data.bgbb.apiUrl && data.bgbb.apiKeySet}
+			<form action="?/testBgbbConnection" method="POST" use:enhance class="flex justify-end">
+				<button
+					type="submit"
+					class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition"
+				>
+					Verbindung testen
+				</button>
+			</form>
+		{/if}
 	</div>
 
 	<!-- Section 2: Notenschlüssel-Vorlagen (Grading Scale Templates Editor) -->

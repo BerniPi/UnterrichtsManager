@@ -67,7 +67,19 @@ export const POST: RequestHandler = async ({ request }) => {
 				}
 				for (const tbl of existingTables) {
 					if (mainTables.includes(tbl)) {
-						sqlite.prepare(`INSERT INTO main."${tbl}" SELECT * FROM backup_db."${tbl}"`).run();
+						// Only shared columns, so backups from older/newer schema versions still restore
+						const columnsOf = (schemaName: string) =>
+							(sqlite.prepare(`PRAGMA ${schemaName}.table_info("${tbl}")`).all() as { name: string }[]).map(
+								(c) => c.name
+							);
+						const backupColumns = new Set(columnsOf('backup_db'));
+						const cols = columnsOf('main')
+							.filter((c) => backupColumns.has(c))
+							.map((c) => `"${c}"`)
+							.join(', ');
+						sqlite
+							.prepare(`INSERT INTO main."${tbl}" (${cols}) SELECT ${cols} FROM backup_db."${tbl}"`)
+							.run();
 					}
 				}
 			});

@@ -1,22 +1,22 @@
 import type { PageServerLoad, Actions } from './$types';
 import { db, sqlite } from '$lib/server/db';
 import * as schema from '$lib/server/db/schema';
-import { eq, and } from 'drizzle-orm';
 import crypto from 'node:crypto';
 import * as XLSX from 'xlsx';
-import {
-	reconcileStudentRoster,
-	assignAlphabeticalCatalogNumbers,
-	type RawStudentImport,
-	type ExistingStudent
-} from '$lib/services/reconciliation';
+import { fail } from '@sveltejs/kit';
+import { assignAlphabeticalCatalogNumbers, type RawStudentImport } from '$lib/services/reconciliation';
+import { studentRepository } from '$lib/server/repositories/student.repository';
+import { BgbbError, fetchBgbbClasses, fetchBgbbRoster, getBgbbConfig } from '$lib/server/bgbb/client';
 
 export const load: PageServerLoad = async ({ parent }) => {
 	const layoutData = await parent();
 	const sy = layoutData.currentSchoolYear;
 
+	const bgbb = getBgbbConfig();
+	const bgbbConfigured = Boolean(bgbb.apiUrl && bgbb.apiKey);
+
 	if (!sy) {
-		return { classes: [], activeSchoolYear: null };
+		return { classes: [], activeSchoolYear: null, bgbbConfigured };
 	}
 
 	const classesWithStudentCounts = sqlite
@@ -45,7 +45,8 @@ export const load: PageServerLoad = async ({ parent }) => {
 
 	return {
 		activeSchoolYear: sy,
-		classes: classesWithStudentCounts
+		classes: classesWithStudentCounts,
+		bgbbConfigured
 	};
 };
 
@@ -134,70 +135,120 @@ export const actions: Actions = {
 			incoming = assignAlphabeticalCatalogNumbers(incoming);
 		}
 
-		const existing = sqlite
-			.prepare(
-				'SELECT id, first_name as firstName, last_name as lastName, webuntis_id as webuntisId, catalog_number as catalogNumber, status FROM students WHERE class_id = ?'
-			)
-			.all(classId) as ExistingStudent[];
-
-		const diff = reconcileStudentRoster(incoming, existing);
-
-		// 1. Insert added students
-		for (const add of diff.added) {
-			db.insert(schema.students)
-				.values({
-					id: crypto.randomUUID(),
-					classId,
-					firstName: add.firstName,
-					lastName: add.lastName,
-					webuntisId: add.webuntisId || null,
-					catalogNumber: add.catalogNumber || null,
-					status: 'active'
-				})
-				.run();
-		}
-
-		// 2. Reactivate students
-		for (const react of diff.reactivated) {
-			db.update(schema.students)
-				.set({
-					status: 'active',
-					catalogNumber: react.incoming.catalogNumber || react.existing.catalogNumber,
-					webuntisId: react.incoming.webuntisId || react.existing.webuntisId
-				})
-				.where(eq(schema.students.id, react.existing.id))
-				.run();
-		}
-
-		// 3. Update existing
-		for (const up of diff.updated) {
-			db.update(schema.students)
-				.set({
-					catalogNumber: up.incoming.catalogNumber ?? up.existing.catalogNumber,
-					webuntisId: up.incoming.webuntisId ?? up.existing.webuntisId
-				})
-				.where(eq(schema.students.id, up.existing.id))
-				.run();
-		}
-
-		// 4. Mark left students as inactive
-		for (const left of diff.left) {
-			db.update(schema.students)
-				.set({ status: 'inactive' })
-				.where(eq(schema.students.id, left.id))
-				.run();
-		}
+		const { stats } = studentRepository.importRoster(classId, incoming);
 
 		return {
 			success: true,
 			imported: true,
-			stats: {
-				added: diff.added.length,
-				reactivated: diff.reactivated.length,
-				updated: diff.updated.length,
-				left: diff.left.length,
-				unchanged: diff.unchanged.length
-			}
+			stats
 		};
+	},
+
+	// --- Import aus BGBB Admin ---
+
+	bgbbLoadClasses: async () => {
+		try {
+			const bgbbClasses = await fetchBgbbClasses();
+			const sy = getCurrentSchoolYear();
+			const existingNames = sy ? classNamesBySchoolYear(sy.id) : new Map<string, string>();
+			return {
+				bgbbClasses: bgbbClasses.map((c) => ({
+					...c,
+					existsInNotenmanager: existingNames.has(c.klasse.toLowerCase())
+				}))
+			};
+		} catch (e) {
+			return fail(502, { bgbbError: bgbbErrorMessage(e) });
+		}
+	},
+
+	bgbbPreview: async ({ request }) => {
+		const form = await request.formData();
+		const klassen = form.getAll('klassen').map(String).filter(Boolean);
+		const sy = getCurrentSchoolYear();
+		if (!sy) return fail(400, { bgbbError: 'Kein Schuljahr angelegt.' });
+		if (klassen.length === 0) return fail(400, { bgbbError: 'Bitte mindestens eine Klasse auswählen.' });
+
+		try {
+			const existingNames = classNamesBySchoolYear(sy.id);
+			const preview = [];
+			for (const klasse of klassen) {
+				const roster = await fetchBgbbRoster(klasse);
+				const classId = existingNames.get(klasse.toLowerCase()) ?? null;
+				const { diff, stats } = classId
+					? studentRepository.importRoster(classId, roster, { dryRun: true })
+					: { diff: null, stats: { added: roster.length, reactivated: 0, updated: 0, left: 0, unchanged: 0 } };
+
+				const fullName = (s: { firstName: string; lastName: string }) => `${s.lastName} ${s.firstName}`;
+				preview.push({
+					klasse,
+					isNewClass: classId === null,
+					stats,
+					added: (diff ? diff.added : roster).map(fullName),
+					reactivated: diff ? diff.reactivated.map((r) => fullName(r.incoming)) : [],
+					updated: diff ? diff.updated.map((u) => ({ name: fullName(u.existing), changes: u.changes })) : [],
+					left: diff ? diff.left.map(fullName) : []
+				});
+			}
+			return { bgbbPreview: preview };
+		} catch (e) {
+			return fail(502, { bgbbError: bgbbErrorMessage(e) });
+		}
+	},
+
+	bgbbCommit: async ({ request }) => {
+		const form = await request.formData();
+		const klassen = form.getAll('klassen').map(String).filter(Boolean);
+		const sy = getCurrentSchoolYear();
+		if (!sy) return fail(400, { bgbbError: 'Kein Schuljahr angelegt.' });
+		if (klassen.length === 0) return fail(400, { bgbbError: 'Bitte mindestens eine Klasse auswählen.' });
+
+		try {
+			// Erst alle Listen holen, damit ein Verbindungsfehler nicht zu einem halben Import führt
+			const rosters = [];
+			for (const klasse of klassen) {
+				rosters.push({ klasse, roster: await fetchBgbbRoster(klasse) });
+			}
+
+			const existingNames = classNamesBySchoolYear(sy.id);
+			const total = { added: 0, reactivated: 0, updated: 0, left: 0, unchanged: 0 };
+			let createdClasses = 0;
+
+			for (const { klasse, roster } of rosters) {
+				let classId = existingNames.get(klasse.toLowerCase());
+				if (!classId) {
+					classId = crypto.randomUUID();
+					db.insert(schema.classes).values({ id: classId, name: klasse, room: null, schoolYearId: sy.id }).run();
+					createdClasses++;
+				}
+				const { stats } = studentRepository.importRoster(classId, roster);
+				for (const k of Object.keys(total) as Array<keyof typeof total>) total[k] += stats[k];
+			}
+
+			return { imported: true, stats: total, bgbbImported: { classes: klassen.length, createdClasses } };
+		} catch (e) {
+			return fail(502, { bgbbError: bgbbErrorMessage(e) });
+		}
 	}
 };
+
+function getCurrentSchoolYear() {
+	return sqlite
+		.prepare('SELECT id, name FROM school_years ORDER BY is_current DESC, start_date DESC LIMIT 1')
+		.get() as { id: string; name: string } | undefined;
+}
+
+/** Klassenname (klein geschrieben) -> Klassen-ID im Schuljahr */
+function classNamesBySchoolYear(schoolYearId: string): Map<string, string> {
+	const rows = sqlite.prepare('SELECT id, name FROM classes WHERE school_year_id = ?').all(schoolYearId) as Array<{
+		id: string;
+		name: string;
+	}>;
+	return new Map(rows.map((r) => [r.name.trim().toLowerCase(), r.id]));
+}
+
+function bgbbErrorMessage(e: unknown): string {
+	if (e instanceof BgbbError) return e.message;
+	console.error('BGBB-Import fehlgeschlagen', e);
+	return 'Import aus BGBB Admin fehlgeschlagen.';
+}

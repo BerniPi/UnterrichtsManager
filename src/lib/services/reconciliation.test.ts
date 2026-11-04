@@ -59,6 +59,43 @@ describe('Student Roster Reconciliation', () => {
 		expect(result.added[0].lastName).toBe('Neu');
 	});
 
+	it('matches by SchKz first and detects name changes', () => {
+		const withSchkz: ExistingStudent[] = [
+			{ id: '1', firstName: 'Max', lastName: 'Mustermann', schkz: '1001', catalogNumber: 1, status: 'active' },
+			{ id: '2', firstName: 'Anna', lastName: 'Huber', schkz: '1002', catalogNumber: 2, status: 'active' }
+		];
+		const incoming: RawStudentImport[] = [
+			// Anna hat geheiratet: gleiche SchKz, neuer Familienname
+			{ firstName: 'Anna', lastName: 'Gruber', schkz: '1002', catalogNumber: 1 },
+			{ firstName: 'Max', lastName: 'Mustermann', schkz: '1001', catalogNumber: 2 }
+		];
+
+		const result = reconcileStudentRoster(incoming, withSchkz);
+		expect(result.added).toHaveLength(0);
+		expect(result.left).toHaveLength(0);
+		const anna = result.updated.find((u) => u.existing.id === '2');
+		expect(anna?.changes.some((c) => c.startsWith('Name:'))).toBe(true);
+	});
+
+	it('does not match a same-named student with a different SchKz', () => {
+		const withSchkz: ExistingStudent[] = [
+			{ id: '1', firstName: 'Lukas', lastName: 'Gruber', schkz: '2001', catalogNumber: 1, status: 'active' }
+		];
+		const incoming: RawStudentImport[] = [{ firstName: 'Lukas', lastName: 'Gruber', schkz: '2002' }];
+
+		const result = reconcileStudentRoster(incoming, withSchkz);
+		expect(result.added).toHaveLength(1);
+		expect(result.left.map((s) => s.id)).toEqual(['1']);
+	});
+
+	it('stores the SchKz on a name match without SchKz yet', () => {
+		const incoming: RawStudentImport[] = [{ firstName: 'Max', lastName: 'Mustermann', webuntisId: 'WU-01', catalogNumber: 1, schkz: '3001' }];
+
+		const result = reconcileStudentRoster(incoming, existing);
+		expect(result.updated).toHaveLength(1);
+		expect(result.updated[0].changes).toContain('SchKz: - -> 3001');
+	});
+
 	it('assigns catalog numbers alphabetically by last name and first name', () => {
 		const unnumbered: RawStudentImport[] = [
 			{ firstName: 'Tobias', lastName: 'Mayer' },

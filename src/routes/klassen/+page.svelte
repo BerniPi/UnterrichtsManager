@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { enhance } from '$app/forms';
+	import { enhance, type SubmitFunction } from '$app/forms';
 	import {
 		Plus,
 		UploadCloud,
@@ -10,7 +10,9 @@
 		AlertCircle,
 		ArrowRight,
 		X,
-		School
+		School,
+		RefreshCw,
+		LoaderCircle
 	} from '@lucide/svelte';
 	import { assignAlphabeticalCatalogNumbers } from '$lib/services/reconciliation';
 
@@ -24,8 +26,19 @@
 				active_student_count: number;
 				inactive_student_count: number;
 			}>;
+			bgbbConfigured: boolean;
 		};
 		form?: any;
+	}
+
+	interface BgbbPreviewEntry {
+		klasse: string;
+		isNewClass: boolean;
+		stats: { added: number; reactivated: number; updated: number; left: number; unchanged: number };
+		added: string[];
+		reactivated: string[];
+		updated: Array<{ name: string; changes: string[] }>;
+		left: string[];
 	}
 
 	let { data, form }: Props = $props();
@@ -40,6 +53,28 @@
 	let idCol = $state('');
 	let catCol = $state('');
 	let step = $state<1 | 2>(1); // 1 = Upload, 2 = Mapping/Preview
+
+	// BGBB-Admin-Import
+	let showBgbbModal = $state(false);
+	let bgbbLoading = $state(false);
+	let bgbbError = $state('');
+	let bgbbClasses = $state<Array<{ klasse: string; studentCount: number; existsInNotenmanager: boolean }>>([]);
+	let bgbbSelected = $state<string[]>([]);
+	let bgbbPreview = $state<BgbbPreviewEntry[] | null>(null);
+
+	// Laden und Vorschau: Ergebnis nur lokal übernehmen, Seite nicht neu laden
+	function bgbbEnhance(onSuccess: (data: any) => void): SubmitFunction {
+		return () => {
+			bgbbLoading = true;
+			bgbbError = '';
+			return async ({ result }) => {
+				bgbbLoading = false;
+				if (result.type === 'success') onSuccess(result.data);
+				else if (result.type === 'failure') bgbbError = result.data?.bgbbError || 'Unbekannter Fehler';
+				else if (result.type === 'error') bgbbError = result.error?.message || 'Unbekannter Fehler';
+			};
+		};
+	}
 
 	$effect(() => {
 		if (form?.parsed && form.suggestedMapping) {
@@ -97,6 +132,31 @@
 				<span>Neue Klasse</span>
 			</button>
 
+			<form
+				action="?/bgbbLoadClasses"
+				method="POST"
+				use:enhance={bgbbEnhance((d) => {
+					bgbbClasses = d.bgbbClasses;
+					bgbbSelected = d.bgbbClasses.filter((c: any) => c.existsInNotenmanager).map((c: any) => c.klasse);
+					bgbbPreview = null;
+				})}
+				onsubmit={() => {
+					bgbbClasses = [];
+					bgbbPreview = null;
+					showBgbbModal = true;
+				}}
+			>
+				<button
+					type="submit"
+					disabled={!data.bgbbConfigured}
+					title={data.bgbbConfigured ? 'Schülerlisten aus BGBB Admin übernehmen' : 'BGBB Admin zuerst in den Einstellungen einrichten'}
+					class="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white font-medium text-sm border border-slate-700 transition flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+				>
+					<RefreshCw class="w-4 h-4" />
+					<span>Aus BGBB Admin</span>
+				</button>
+			</form>
+
 			<button
 				type="button"
 				onclick={() => {
@@ -119,6 +179,9 @@
 			<div>
 				<h4 class="font-bold text-white">Import erfolgreich abgeschlossen!</h4>
 				<p class="text-xs text-emerald-300 mt-1">
+					{#if form.bgbbImported}
+						{form.bgbbImported.classes} Klasse(n) aus BGBB Admin abgeglichen{form.bgbbImported.createdClasses > 0 ? `, davon ${form.bgbbImported.createdClasses} neu angelegt` : ''}:
+					{/if}
 					{form.stats.added} neu hinzugefügt, {form.stats.updated} aktualisiert, {form.stats.reactivated} reaktiviert, {form.stats.left} als ausgetreten markiert, {form.stats.unchanged} unverändert.
 				</p>
 			</div>
@@ -413,6 +476,173 @@
 							class="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold shadow-md shadow-emerald-500/20"
 						>
 							Roster jetzt abgleichen & speichern
+						</button>
+					</div>
+				</form>
+			{/if}
+		</div>
+	</div>
+{/if}
+
+<!-- Modal: Import aus BGBB Admin -->
+{#if showBgbbModal}
+	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm overflow-y-auto">
+		<div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-2xl p-6 space-y-4 shadow-2xl my-8">
+			<div class="flex items-center justify-between pb-3 border-b border-slate-800">
+				<div>
+					<h3 class="text-lg font-bold text-white flex items-center space-x-2">
+						<RefreshCw class="w-5 h-5 text-blue-400" />
+						<span>Schülerlisten aus BGBB Admin</span>
+					</h3>
+					<p class="text-xs text-slate-400">
+						Übernimmt Vorname, Familienname und SchKz. Klassen werden über den Namen zugeordnet, fehlende neu angelegt.
+					</p>
+				</div>
+				<button type="button" onclick={() => (showBgbbModal = false)} class="text-slate-400 hover:text-white">
+					<X class="w-5 h-5" />
+				</button>
+			</div>
+
+			{#if bgbbError}
+				<div class="p-3 bg-red-950/90 border border-red-800 text-red-200 text-xs rounded-xl flex items-start space-x-2">
+					<AlertCircle class="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+					<span>{bgbbError}</span>
+				</div>
+			{/if}
+
+			{#if bgbbLoading && bgbbClasses.length === 0}
+				<div class="flex items-center justify-center py-10 text-slate-400 text-sm space-x-2">
+					<LoaderCircle class="w-5 h-5 animate-spin" />
+					<span>Lade Klassen aus BGBB Admin …</span>
+				</div>
+			{:else if !bgbbPreview && bgbbClasses.length > 0}
+				<!-- Schritt 1: Klassen auswählen -->
+				<form
+					action="?/bgbbPreview"
+					method="POST"
+					use:enhance={bgbbEnhance((d) => (bgbbPreview = d.bgbbPreview))}
+					class="space-y-4"
+				>
+					<div class="flex items-center justify-between text-xs">
+						<span class="font-semibold uppercase tracking-wider text-slate-400">
+							Klassen auswählen ({bgbbSelected.length} gewählt)
+						</span>
+						<div class="space-x-3">
+							<button type="button" class="text-blue-400 hover:text-blue-300" onclick={() => (bgbbSelected = bgbbClasses.map((c) => c.klasse))}>Alle</button>
+							<button type="button" class="text-blue-400 hover:text-blue-300" onclick={() => (bgbbSelected = [])}>Keine</button>
+						</div>
+					</div>
+
+					<div class="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-80 overflow-y-auto">
+						{#each bgbbClasses as c}
+							<label class="flex items-center space-x-2 px-3 py-2 rounded-xl bg-slate-950 border text-sm cursor-pointer transition {bgbbSelected.includes(c.klasse) ? 'border-blue-600 text-white' : 'border-slate-800 text-slate-300 hover:border-slate-700'}">
+								<input type="checkbox" name="klassen" value={c.klasse} bind:group={bgbbSelected} class="w-4 h-4 rounded text-blue-600 bg-slate-950 border-slate-700" />
+								<span class="font-semibold">{c.klasse}</span>
+								<span class="text-xs text-slate-500">{c.studentCount}</span>
+								{#if c.existsInNotenmanager}
+									<CheckCircle2 class="w-3.5 h-3.5 text-emerald-400 ml-auto" aria-label="Klasse existiert bereits" />
+								{/if}
+							</label>
+						{/each}
+					</div>
+
+					<p class="text-[11px] text-slate-500 flex items-center space-x-1.5">
+						<CheckCircle2 class="w-3.5 h-3.5 text-emerald-400" />
+						<span>Klasse gibt es im Notenmanager schon (vorausgewählt)</span>
+					</p>
+
+					<div class="flex items-center justify-end space-x-3 pt-3 border-t border-slate-800">
+						<button type="button" onclick={() => (showBgbbModal = false)} class="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-sm font-medium">
+							Abbrechen
+						</button>
+						<button
+							type="submit"
+							disabled={bgbbSelected.length === 0 || bgbbLoading}
+							class="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold shadow-md shadow-blue-500/20 disabled:opacity-50 flex items-center space-x-2"
+						>
+							{#if bgbbLoading}<LoaderCircle class="w-4 h-4 animate-spin" />{/if}
+							<span>Abgleich prüfen</span>
+						</button>
+					</div>
+				</form>
+			{:else if bgbbPreview}
+				<!-- Schritt 2: Vorschau & Übernehmen -->
+				<form
+					action="?/bgbbCommit"
+					method="POST"
+					use:enhance={() => {
+						bgbbLoading = true;
+						bgbbError = '';
+						return async ({ result, update }) => {
+							bgbbLoading = false;
+							if (result.type === 'success') {
+								showBgbbModal = false;
+								await update();
+							} else if (result.type === 'failure') {
+								bgbbError = String(result.data?.bgbbError || 'Unbekannter Fehler');
+							} else if (result.type === 'error') {
+								bgbbError = result.error?.message || 'Unbekannter Fehler';
+							}
+						};
+					}}
+					class="space-y-4"
+				>
+					{#each bgbbPreview as p}
+						<input type="hidden" name="klassen" value={p.klasse} />
+					{/each}
+
+					<div class="space-y-3 max-h-[28rem] overflow-y-auto pr-1">
+						{#each bgbbPreview as p}
+							<div class="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+								<div class="flex flex-wrap items-center justify-between gap-2">
+									<span class="font-bold text-white">
+										Klasse {p.klasse}
+										{#if p.isNewClass}
+											<span class="ml-2 text-[10px] font-semibold uppercase text-blue-300 bg-blue-950 border border-blue-800 rounded px-1.5 py-0.5">wird angelegt</span>
+										{/if}
+									</span>
+									<span class="text-[11px] text-slate-400">
+										{p.stats.added} neu · {p.stats.updated} geändert · {p.stats.reactivated} reaktiviert · {p.stats.left} ausgetreten · {p.stats.unchanged} gleich
+									</span>
+								</div>
+								{#if p.added.length > 0 && !p.isNewClass}
+									<p class="text-xs text-emerald-300"><strong>Neu:</strong> {p.added.join(', ')}</p>
+								{/if}
+								{#if p.reactivated.length > 0}
+									<p class="text-xs text-sky-300"><strong>Reaktiviert:</strong> {p.reactivated.join(', ')}</p>
+								{/if}
+								{#if p.left.length > 0}
+									<p class="text-xs text-amber-300"><strong>Als ausgetreten markiert:</strong> {p.left.join(', ')}</p>
+								{/if}
+								{#if p.updated.length > 0}
+									<details class="text-xs text-slate-300">
+										<summary class="cursor-pointer text-slate-400">{p.updated.length} Änderung(en) anzeigen</summary>
+										<ul class="mt-1 space-y-0.5 pl-3">
+											{#each p.updated as u}
+												<li><span class="text-white">{u.name}:</span> {u.changes.join('; ')}</li>
+											{/each}
+										</ul>
+									</details>
+								{/if}
+							</div>
+						{/each}
+					</div>
+
+					<p class="text-[11px] text-slate-500">
+						Ausgetretene Schüler werden nur inaktiv gesetzt, Noten und Einträge bleiben erhalten. Katalognummern werden alphabetisch vergeben.
+					</p>
+
+					<div class="flex items-center justify-between pt-3 border-t border-slate-800">
+						<button type="button" onclick={() => (bgbbPreview = null)} class="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-sm font-medium">
+							Zurück
+						</button>
+						<button
+							type="submit"
+							disabled={bgbbLoading}
+							class="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold shadow-md shadow-emerald-500/20 disabled:opacity-50 flex items-center space-x-2"
+						>
+							{#if bgbbLoading}<LoaderCircle class="w-4 h-4 animate-spin" />{/if}
+							<span>Abgleich übernehmen</span>
 						</button>
 					</div>
 				</form>

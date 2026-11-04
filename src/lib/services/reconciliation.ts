@@ -3,6 +3,7 @@ export interface RawStudentImport {
 	lastName: string;
 	webuntisId?: string;
 	catalogNumber?: number;
+	schkz?: string; // Schülerkennzahl aus BGBB Admin
 }
 
 export interface ExistingStudent {
@@ -11,6 +12,7 @@ export interface ExistingStudent {
 	lastName: string;
 	webuntisId?: string | null;
 	catalogNumber?: number | null;
+	schkz?: string | null;
 	status: string; // 'active' | 'inactive'
 }
 
@@ -51,16 +53,26 @@ export function reconcileStudentRoster(
 		const incFirst = normalizeName(inc.firstName);
 		const incLast = normalizeName(inc.lastName);
 
-		// Match priority 1: WebUntis ID
-		let match = inc.webuntisId
-			? existing.find((e) => e.webuntisId && e.webuntisId.trim() === inc.webuntisId?.trim())
+		// Match priority 1: SchKz (never changes, survives name changes)
+		const incSchkz = inc.schkz?.trim();
+		let match = incSchkz
+			? existing.find((e) => !matchedExistingIds.has(e.id) && e.schkz?.trim() === incSchkz)
 			: undefined;
 
-		// Match priority 2: Exact Name
+		// Match priority 2: WebUntis ID
+		if (!match && inc.webuntisId) {
+			match = existing.find(
+				(e) => !matchedExistingIds.has(e.id) && e.webuntisId && e.webuntisId.trim() === inc.webuntisId?.trim()
+			);
+		}
+
+		// Match priority 3: Exact Name
 		if (!match) {
 			match = existing.find(
 				(e) =>
 					!matchedExistingIds.has(e.id) &&
+					// a different SchKz means a different person with the same name
+					!(incSchkz && e.schkz && e.schkz.trim() !== incSchkz) &&
 					normalizeName(e.lastName) === incLast &&
 					normalizeName(e.firstName) === incFirst
 			);
@@ -75,6 +87,13 @@ export function reconcileStudentRoster(
 			}
 			if (inc.webuntisId && inc.webuntisId !== match.webuntisId) {
 				changes.push(`WebUntis-ID: ${match.webuntisId ?? '-'} -> ${inc.webuntisId}`);
+			}
+			if (incSchkz && incSchkz !== match.schkz) {
+				changes.push(`SchKz: ${match.schkz ?? '-'} -> ${incSchkz}`);
+			}
+			// only real name changes (matched via SchKz/WebUntis-ID), not case or accents
+			if (normalizeName(match.lastName) !== incLast || normalizeName(match.firstName) !== incFirst) {
+				changes.push(`Name: ${match.lastName} ${match.firstName} -> ${inc.lastName.trim()} ${inc.firstName.trim()}`);
 			}
 
 			if (match.status === 'inactive') {

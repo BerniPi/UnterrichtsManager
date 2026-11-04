@@ -26,6 +26,7 @@ src/
   lib/server/auth/           Sessions, TOTP
   lib/server/repositories/   Datenzugriff je Entität (*.repository.ts, Objekt-Literal `xyzRepository`)
   lib/server/reminders/      dispatcher.ts: überfällige Rückläufe, Frühwarn-Erinnerungen, Web-Push
+  lib/server/bgbb/           client.ts: Schülerimport aus der Bot-API von BGBB Admin
   lib/services/              reine Fachlogik (ohne HTTP), mit *.test.ts
   lib/components/course/     Tabs der Kursseite (Course*Tab.svelte)
   lib/components/assessments/ Notenschlüssel-Editor, Vorlagen-Manager, Statistik-Chart
@@ -57,6 +58,7 @@ Vitest: `expect.requireAssertions: true` → jeder Test braucht mindestens ein `
 | `ORIGIN`, `PROTOCOL_HEADER` | hinter Caddy nötig (CSRF/Cookie-Secure) |
 | `HOST_PORT`, `HOST_BIND` | Port-Mapping in docker-compose |
 | `NODE_ENV=production` | Seed legt dann keine fiktiven Demo-Daten an |
+| `BGBB_API_URL`, `BGBB_API_KEY` | optional: Anbindung BGBB Admin; sind beide gesetzt, gehen sie den Einstellungen vor (`bgbb_api_url`, `bgbb_api_key` in `settings`) |
 
 VAPID-Keys werden automatisch erzeugt und in `settings` gespeichert (`vapid_public_key`, `vapid_private_key`).
 
@@ -77,12 +79,12 @@ VAPID-Keys werden automatisch erzeugt und in `settings` gespeichert (`vapid_publ
 |---|---|
 | `/` | Dashboard: überfällige Rückläufe, Frühwarn-Erinnerungen; `markReturnSigned`, `snooze`, `recordAsked`, `triggerPushCheck` … |
 | `/stundenansicht` | Mobile Erfassung im Unterricht: `setParticipation`, `setHomeworkStatus`, `quickNote`, Stundennotizen, Rücklauf-Schnellaktionen |
-| `/klassen` | Klassen anlegen, WebUntis-Import (`parseUpload` → Vorschau → `commitImport`) |
+| `/klassen` | Klassen anlegen, WebUntis-Import (`parseUpload` → Vorschau → `commitImport`), BGBB-Import (`bgbbLoadClasses` → `bgbbPreview` → `bgbbCommit`) |
 | `/klassen/[id]` | Schülerliste: `addStudent`, `toggleStatus`, `renumberAlphabetically`, `updateStudent` |
 | `/kurse` | Kurse (Klasse + Fach) anlegen |
 | `/kurse/[id]?tab=…` | Kursseite mit Tabs, größte Action-Datei (Tests, Beobachtungen, Stunden, HÜ, Frühwarnungen, Gewichtung, Endnote) |
 | `/schueler/[id]` | Schülerkarte: Gesamtübersicht, Notizen (`addNote`, `deleteNote`), `updateStudent` |
-| `/einstellungen` | Einstellungen, Passwort, TOTP, Notenschlüssel-Vorlagen, `resetFictionalData` |
+| `/einstellungen` | Einstellungen, BGBB-Anbindung (`updateBgbbSettings`, `testBgbbConnection`), Passwort, TOTP, Notenschlüssel-Vorlagen, `resetFictionalData` |
 | `/login`, `/logout` | Anmeldung (mit TOTP), Abmeldung (GET+POST) |
 | `/api/backup/download`, `/api/backup/upload` | SQLite-Backup herunterladen / wiederherstellen (max. 50 MB) |
 | `/api/export/webuntis` | Notenliste als xlsx/csv |
@@ -112,7 +114,7 @@ Booleans als `INTEGER 0/1`. Fremdschlüssel mit `ON DELETE CASCADE` (Ausnahme `n
 |---|---|
 | `users`, `sessions` | Login, TOTP |
 | `school_years` | Semesterenden, Notenschluss- und Frühwarnfristen, `is_current` |
-| `classes` → `students` | Schüler: `catalog_number`, `webuntis_id`, `status` `active`/`inactive` |
+| `classes` → `students` | Schüler: `catalog_number`, `webuntis_id`, `schkz` (aus BGBB Admin), `status` `active`/`inactive` |
 | `courses` | Klasse + Fach + Gewichte (`weight_schularbeiten` 40, `tests` 20, `participation` 25, `observations` 10, `homework` 5) |
 | `participation_entries` | Mitarbeit `plus`/`tilde`/`minus`, **eindeutig je Kurs+Schüler+ISO-Woche** |
 | `observations` → `observation_scores` | Beobachtungen mit Punkten; `note` global bzw. je Schüler |
@@ -138,8 +140,9 @@ Eindeutige Indizes je (Eltern-ID, `student_id`) auf Ergebnissen, Rückläufen, H
   2. `CREATE TABLE` in `initDb()`,
   3. `ALTER TABLE … ADD COLUMN` im `try { } catch {}`-Block in `initDb()`.
 - Neue Tabelle: `schema.ts` + `initDb()`; ggf. in die `DELETE`-Liste von `seedDatabase(force)` aufnehmen.
-- Backup-Restore kopiert mit `INSERT INTO main.t SELECT * FROM backup.t` → **Spaltenreihenfolge muss übereinstimmen**.
-  Per `ALTER` angehängte Spalten liegen am Ende; das `CREATE TABLE` sollte sie ebenfalls am Ende führen.
+- Backup-Restore (`api/backup/upload`) kopiert je Tabelle nur die Spalten, die in Backup **und** aktueller DB existieren
+  → ältere Backups ohne neue Spalten bleiben einspielbar (neue Spalten sind danach leer).
+  Neue Spalten trotzdem am Ende des `CREATE TABLE` führen (gleiche Reihenfolge wie nach `ALTER`).
 
 ## Fachliche Regeln
 
@@ -163,7 +166,15 @@ Eindeutige Indizes je (Eltern-ID, `student_id`) auf Ergebnissen, Rückläufen, H
   `markAllDone` setzt alle aktiven Schüler auf `done`, `resetAll` löscht alle Status. Gleiche Logik in Kursseite und Stundenansicht.
 - **Katalognummern**: beim Import automatisch alphabetisch (Nachname, dann Vorname, deutsche Sortierung) vergeben;
   `renumberAlphabetically` nummeriert neu.
-- **WebUntis-Abgleich** (`services/reconciliation.ts`): erkennt neue, geänderte und ausgetretene Schüler (Namen normalisiert).
+- **Schülerabgleich** (`services/reconciliation.ts`, gespeichert über `studentRepository.importRoster`, gilt für WebUntis
+  und BGBB): Zuordnung in der Reihenfolge SchKz → WebUntis-ID → Name (normalisiert, ohne Groß/Klein und Akzente).
+  Gleicher Name mit **anderer** SchKz ist eine andere Person. Fehlende Schüler werden nur `inactive`, nie gelöscht.
+  Namen werden nur bei echter Änderung überschrieben (z. B. Namenswechsel bei gleicher SchKz).
+- **BGBB-Import** (`lib/server/bgbb/client.ts`): nutzt `GET /api/v1/bot/classes` und `/classes/:klasse` von BGBB Admin
+  (Header `x-api-key`, Key mit Recht „read“). Übernommen werden nur Vorname, Familienname, SchKz; Katalognummern alphabetisch.
+  Klassen werden über den Namen (ohne Groß/Klein) im aktuellen Schuljahr zugeordnet, fehlende neu angelegt.
+  BGBB liefert die dort **aktive** Schuljahres-DB – passt sie nicht zum aktuellen Schuljahr hier, landen falsche Listen im Import.
+  Der API-Key wird nur serverseitig verwendet und nie an den Browser geschickt (liegt aber in `settings` und damit im Backup).
 - **Datum/Zeitzone**: `services/dates.ts` verwenden (`todayVienna`, `addDays` in UTC-Arithmetik, `getIsoWeekAndYear`).
   Achtung: einige Stellen nutzen noch `new Date().toISOString().slice(0, 10)` (UTC) – kann kurz nach Mitternacht abweichen.
 - **Push** wird nur manuell ausgelöst (Action `triggerPushCheck` auf `/`), es gibt keinen Zeitplan im Server.

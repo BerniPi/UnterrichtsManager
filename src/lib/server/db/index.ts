@@ -71,7 +71,8 @@ export function initDb() {
 			webuntis_id TEXT,
 			catalog_number INTEGER,
 			status TEXT NOT NULL DEFAULT 'active',
-			notes TEXT
+			notes TEXT,
+			schkz TEXT
 		);
 
 		CREATE TABLE IF NOT EXISTS courses (
@@ -292,6 +293,12 @@ export function initDb() {
 	try {
 		sqlite.exec(`ALTER TABLE observations ADD COLUMN note TEXT;`);
 	} catch (e) {}
+
+	try {
+		sqlite.exec(`ALTER TABLE students ADD COLUMN schkz TEXT;`);
+	} catch (e) {}
+
+	sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_students_schkz ON students(schkz);`);
 
 	// Auto-seed default templates if none exist
 	try {

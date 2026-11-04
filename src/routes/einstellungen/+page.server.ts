@@ -9,6 +9,7 @@ import { seedDatabase } from '$lib/server/db/seed';
 import { gradingTemplateRepository } from '$lib/server/repositories/grading-template.repository';
 import { settingsRepository } from '$lib/server/repositories/settings.repository';
 import { validateScale, type GradingThreshold } from '$lib/services/grading';
+import { BgbbError, fetchBgbbClasses, getBgbbConfig, saveBgbbConfig } from '$lib/server/bgbb/client';
 
 export const load: PageServerLoad = async ({ locals }) => {
 	const user = locals.user!;
@@ -21,6 +22,8 @@ export const load: PageServerLoad = async ({ locals }) => {
 	).count;
 
 	const gradingTemplates = gradingTemplateRepository.getAll();
+	// Der API-Key selbst geht nie an den Browser
+	const bgbb = getBgbbConfig();
 
 	return {
 		username: user.username,
@@ -30,7 +33,12 @@ export const load: PageServerLoad = async ({ locals }) => {
 		earlyWarningThreshold: settings.earlyWarningThreshold,
 		emailSummaryEnabled: settings.emailSummaryEnabled,
 		pushSubscriptionsCount: subCount,
-		gradingTemplates
+		gradingTemplates,
+		bgbb: {
+			apiUrl: bgbb.apiUrl,
+			apiKeySet: Boolean(bgbb.apiKey),
+			fromEnv: bgbb.fromEnv
+		}
 	};
 };
 
@@ -50,6 +58,36 @@ export const actions: Actions = {
 		});
 
 		return { success: true, message: 'Einstellungen gespeichert!' };
+	},
+
+	updateBgbbSettings: async ({ request }) => {
+		if (getBgbbConfig().fromEnv) {
+			return fail(400, { bgbbError: 'BGBB Admin ist über Umgebungsvariablen eingerichtet und hier nicht änderbar.' });
+		}
+		const form = await request.formData();
+		const apiUrl = form.get('bgbbApiUrl')?.toString().trim() || '';
+		const apiKey = form.get('bgbbApiKey')?.toString() || '';
+
+		if (apiUrl && !/^https?:\/\/[^\s]+$/i.test(apiUrl)) {
+			return fail(400, { bgbbError: 'Bitte eine gültige URL mit http:// oder https:// angeben.' });
+		}
+
+		saveBgbbConfig(apiUrl, apiKey);
+		return { success: true, bgbbMessage: 'BGBB-Admin-Anbindung gespeichert.' };
+	},
+
+	testBgbbConnection: async () => {
+		try {
+			const classes = await fetchBgbbClasses();
+			const students = classes.reduce((sum, c) => sum + c.studentCount, 0);
+			return {
+				success: true,
+				bgbbMessage: `Verbindung zu BGBB Admin OK: ${classes.length} Klassen, ${students} Schüler:innen.`
+			};
+		} catch (e) {
+			if (!(e instanceof BgbbError)) console.error('BGBB-Verbindungstest fehlgeschlagen', e);
+			return fail(502, { bgbbError: e instanceof BgbbError ? e.message : 'Verbindungstest fehlgeschlagen.' });
+		}
 	},
 
 	changePassword: async ({ request, locals }) => {
