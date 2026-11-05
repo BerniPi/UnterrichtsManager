@@ -25,6 +25,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 	// Public paths
 	const isPublic =
 		url.startsWith('/login') ||
+		url.startsWith('/auth/microsoft') ||
 		url === '/manifest.json' ||
 		url === '/sw.js' ||
 		url === '/icon.svg' ||

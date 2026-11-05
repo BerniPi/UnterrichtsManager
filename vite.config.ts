@@ -24,6 +24,7 @@ export default defineConfig({
 	],
 	test: {
 		expect: { requireAssertions: true },
+		fileParallelism: false,
 		projects: [
 			{
 				extends: './vite.config.ts',

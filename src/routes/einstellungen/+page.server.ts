@@ -11,6 +11,7 @@ import { gradingTemplateRepository } from '$lib/server/repositories/grading-temp
 import { settingsRepository } from '$lib/server/repositories/settings.repository';
 import { validateScale } from '$lib/services/grading';
 import { BgbbError, fetchBgbbClasses, getBgbbConfig, saveBgbbConfig } from '$lib/server/bgbb/client';
+import { getEntraConfig, saveEntraConfig } from '$lib/server/auth/entra';
 
 export const load: PageServerLoad = async ({ locals }) => {
 	const user = requireTeacher(locals);
@@ -30,6 +31,9 @@ export const load: PageServerLoad = async ({ locals }) => {
 	const bgbb = isAdmin
 		? getBgbbConfig()
 		: { apiUrl: '', apiKey: '', fromEnv: false };
+	const entra = isAdmin
+		? getEntraConfig()
+		: { tenantId: '', clientId: '', clientSecret: '', fromEnv: false };
 
 	return {
 		username: user.username,
@@ -45,6 +49,13 @@ export const load: PageServerLoad = async ({ locals }) => {
 			apiUrl: bgbb.apiUrl,
 			apiKeySet: Boolean(bgbb.apiKey),
 			fromEnv: bgbb.fromEnv
+		},
+		entra: {
+			tenantId: entra.tenantId,
+			clientId: entra.clientId,
+			clientSecretSet: Boolean(entra.clientSecret),
+			fromEnv: entra.fromEnv,
+			enabled: Boolean(entra.tenantId && entra.clientId && entra.clientSecret)
 		}
 	};
 };
@@ -240,5 +251,24 @@ export const actions: Actions = {
 		}
 		gradingTemplateRepository.delete(id, user.id);
 		return { templateSuccess: 'Vorlage erfolgreich gelöscht!' };
+	},
+
+	updateEntraSettings: async ({ request, locals }) => {
+		requireAdmin(locals);
+		const form = await request.formData();
+		const tenantId = form.get('tenantId')?.toString().trim() || '';
+		const clientId = form.get('clientId')?.toString().trim() || '';
+		const clientSecret = form.get('clientSecret')?.toString() || '';
+
+		const current = getEntraConfig();
+		if (current.fromEnv) {
+			return fail(400, {
+				entraError:
+					'Die Microsoft-Zugangsdaten sind über Umgebungsvariablen (.env) definiert und können hier nicht geändert werden.'
+			});
+		}
+
+		saveEntraConfig(tenantId, clientId, clientSecret);
+		return { entraUpdated: true };
 	}
 };

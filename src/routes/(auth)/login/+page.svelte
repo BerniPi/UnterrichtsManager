@@ -2,10 +2,11 @@
 	import { enhance } from '$app/forms';
 
 	interface Props {
+		data: { ssoEnabled: boolean; errorMessage: string | null };
 		form?: { message?: string; needsTotp?: boolean } | null;
 	}
 
-	let { form }: Props = $props();
+	let { data, form }: Props = $props();
 
 	let loading = $state(false);
 	let showTotp = $state(false);
@@ -35,9 +36,40 @@
 
 	<div class="mt-8 sm:mx-auto sm:w-full sm:max-w-md px-4">
 		<div class="bg-slate-900 border border-slate-800 py-8 px-6 shadow-2xl rounded-2xl sm:px-10">
+			{#if data.errorMessage}
+				<div class="mb-4 p-3 rounded-lg bg-red-950/80 border border-red-800 text-red-200 text-sm">
+					{data.errorMessage}
+				</div>
+			{/if}
+
 			{#if form?.message}
 				<div class="mb-4 p-3 rounded-lg bg-red-950/80 border border-red-800 text-red-200 text-sm">
 					{form.message}
+				</div>
+			{/if}
+
+			{#if data.ssoEnabled}
+				<div class="mb-6">
+					<a
+						href="/auth/microsoft"
+						class="w-full flex items-center justify-center gap-3 px-4 py-3 rounded-xl bg-white hover:bg-slate-100 text-slate-900 font-semibold shadow-md transition duration-150"
+					>
+						<svg class="w-5 h-5 flex-shrink-0" viewBox="0 0 21 21" fill="none">
+							<rect x="1" y="1" width="9" height="9" fill="#f25022" />
+							<rect x="11" y="1" width="9" height="9" fill="#7fba00" />
+							<rect x="1" y="11" width="9" height="9" fill="#00a4ef" />
+							<rect x="11" y="11" width="9" height="9" fill="#ffb900" />
+						</svg>
+						<span>Mit Microsoft 365 anmelden</span>
+					</a>
+					<div class="relative my-6">
+						<div class="absolute inset-0 flex items-center">
+							<div class="w-full border-t border-slate-800"></div>
+						</div>
+						<div class="relative flex justify-center text-xs uppercase">
+							<span class="bg-slate-900 px-3 text-slate-500 font-medium">oder mit Passwort</span>
+						</div>
+					</div>
 				</div>
 			{/if}
 

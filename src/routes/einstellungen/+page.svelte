@@ -11,6 +11,7 @@
 		UploadCloud,
 		CheckCircle2,
 		AlertTriangle,
+		AlertCircle,
 		Link2
 	} from '@lucide/svelte';
 	import GradingTemplatesManager from '$lib/components/assessments/GradingTemplatesManager.svelte';
@@ -27,6 +28,7 @@
 			pushSubscriptionsCount: number;
 			gradingTemplates: Array<any>;
 			bgbb: { apiUrl: string; apiKeySet: boolean; fromEnv: boolean };
+			entra: { tenantId: string; clientId: string; clientSecretSet: boolean; fromEnv: boolean; enabled: boolean };
 		};
 		form?: any;
 	}
@@ -264,6 +266,112 @@
 					>
 						Verbindung testen
 					</button>
+				</form>
+			{/if}
+		</div>
+
+		<!-- Section: Microsoft 365 / Entra ID Single Sign-On -->
+		<div class="p-6 bg-slate-900 border border-slate-800 rounded-2xl shadow-sm space-y-4">
+			<div class="flex flex-wrap items-center justify-between gap-2">
+				<h2 class="text-base font-bold text-white flex items-center space-x-2">
+					<svg class="w-5 h-5 flex-shrink-0" viewBox="0 0 21 21" fill="none">
+						<rect x="1" y="1" width="9" height="9" fill="#f25022" />
+						<rect x="11" y="1" width="9" height="9" fill="#7fba00" />
+						<rect x="1" y="11" width="9" height="9" fill="#00a4ef" />
+						<rect x="11" y="11" width="9" height="9" fill="#ffb900" />
+					</svg>
+					<span>Microsoft 365 / Entra ID (Single Sign-On)</span>
+				</h2>
+				{#if data.entra.enabled}
+					<span class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-950 text-emerald-300 border border-emerald-800">
+						Aktiviert
+					</span>
+				{:else}
+					<span class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-800 text-slate-400 border border-slate-700">
+						Nicht eingerichtet
+					</span>
+				{/if}
+			</div>
+
+			<p class="text-xs text-slate-400 leading-relaxed">
+				Ermöglicht Lehrkräften und Schüler:innen die Anmeldung über ihr Microsoft-365-Konto.
+				Lehrer werden über ihre E-Mail-Adresse abgeglichen; Schüler:innen werden automatisch anhand der BGBB-Klassenstammdaten erkannt.
+			</p>
+
+			<div class="p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-300 space-y-1 font-mono">
+				<div class="text-[11px] text-slate-400 font-sans font-medium">Redirect-URI für das Entra ID / Azure Portal:</div>
+				<div class="text-blue-400 select-all">/auth/microsoft/callback</div>
+			</div>
+
+			{#if form?.entraError}
+				<div class="p-3 rounded-xl bg-red-950 border border-red-800 text-red-200 text-xs flex items-center space-x-2">
+					<AlertCircle class="w-4 h-4 flex-shrink-0" />
+					<span>{form.entraError}</span>
+				</div>
+			{:else if form?.entraUpdated}
+				<div class="p-3 rounded-xl bg-emerald-950 border border-emerald-800 text-emerald-200 text-xs flex items-center space-x-2">
+					<CheckCircle2 class="w-4 h-4 flex-shrink-0" />
+					<span>Microsoft-365-Einstellungen erfolgreich gespeichert!</span>
+				</div>
+			{/if}
+
+			{#if data.entra.fromEnv}
+				<div class="p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-400">
+					Eingerichtet über Umgebungsvariablen (<code>ENTRA_TENANT_ID</code>, <code>ENTRA_CLIENT_ID</code>, <code>ENTRA_CLIENT_SECRET</code>).
+				</div>
+			{:else}
+				<form action="?/updateEntraSettings" method="POST" use:enhance class="space-y-4">
+					<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+						<div>
+							<label for="entraTenant" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
+								Tenant-ID (Mandant)
+							</label>
+							<input
+								id="entraTenant"
+								name="tenantId"
+								type="text"
+								value={data.entra.tenantId}
+								placeholder="z.B. UUID oder bgblumenstrasse.at"
+								class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white text-xs font-mono"
+							/>
+						</div>
+
+						<div>
+							<label for="entraClient" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
+								Client-ID (Anwendungs-ID)
+							</label>
+							<input
+								id="entraClient"
+								name="clientId"
+								type="text"
+								value={data.entra.clientId}
+								placeholder="Anwendungs-ID aus Azure Portal"
+								class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white text-xs font-mono"
+							/>
+						</div>
+					</div>
+
+					<div>
+						<label for="entraSecret" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
+							Client-Secret (Geheimer Clientschlüssel)
+						</label>
+						<input
+							id="entraSecret"
+							name="clientSecret"
+							type="password"
+							placeholder={data.entra.clientSecretSet ? 'gespeichert – leer lassen zum Beibehalten' : 'Geheimes Passwort / Secret aus Azure Portal'}
+							class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white text-xs font-mono"
+						/>
+					</div>
+
+					<div class="flex justify-end pt-2">
+						<button
+							type="submit"
+							class="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-md shadow-blue-500/20 transition"
+						>
+							Microsoft-Zugangsdaten speichern
+						</button>
+					</div>
 				</form>
 			{/if}
 		</div>

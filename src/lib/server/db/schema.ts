@@ -11,6 +11,8 @@ export const users = sqliteTable('users', {
 	createdAt: integer('created_at').notNull(),
 	role: text('role').notNull().default('teacher'), // 'admin' | 'teacher' | 'student'
 	displayName: text('display_name'),
+	email: text('email'),
+	entraOid: text('entra_oid').unique(),
 	isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
 	studentId: text('student_id').references(() => students.id, { onDelete: 'set null' })
 });
@@ -58,7 +60,8 @@ export const students = sqliteTable('students', {
 	catalogNumber: integer('catalog_number'), // Katalognummer
 	status: text('status').notNull().default('active'), // 'active' | 'inactive'
 	notes: text('notes'),
-	schkz: text('schkz') // Schülerkennzahl aus BGBB Admin (stabiler Schlüssel)
+	schkz: text('schkz'), // Schülerkennzahl aus BGBB Admin (stabiler Schlüssel)
+	email: text('email')
 });
 
 export const courses = sqliteTable('courses', {

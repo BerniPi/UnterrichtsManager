@@ -11,12 +11,17 @@ import {
 	verifyTotpToken,
 	invalidateSession
 } from '$lib/server/auth';
+import { isEntraEnabled } from '$lib/server/auth/entra';
 
-export const load: PageServerLoad = async ({ locals }) => {
+export const load: PageServerLoad = async ({ locals, url }) => {
 	if (locals.user) {
 		throw redirect(303, locals.user.role === 'student' ? '/meine-noten' : '/');
 	}
-	return {};
+	const error = url.searchParams.get('error');
+	return {
+		ssoEnabled: isEntraEnabled(),
+		errorMessage: error || null
+	};
 };
 
 export const actions: Actions = {

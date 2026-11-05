@@ -4,6 +4,7 @@ export interface RawStudentImport {
 	webuntisId?: string;
 	catalogNumber?: number;
 	schkz?: string; // Schülerkennzahl aus BGBB Admin
+	email?: string; // M365 Benutzername / E-Mail
 }
 
 export interface ExistingStudent {
@@ -13,6 +14,7 @@ export interface ExistingStudent {
 	webuntisId?: string | null;
 	catalogNumber?: number | null;
 	schkz?: string | null;
+	email?: string | null;
 	status: string; // 'active' | 'inactive'
 }
 
@@ -90,6 +92,9 @@ export function reconcileStudentRoster(
 			}
 			if (incSchkz && incSchkz !== match.schkz) {
 				changes.push(`SchKz: ${match.schkz ?? '-'} -> ${incSchkz}`);
+			}
+			if (inc.email && inc.email.trim().toLowerCase() !== (match.email || '').trim().toLowerCase()) {
+				changes.push(`E-Mail: ${match.email ?? '-'} -> ${inc.email.trim()}`);
 			}
 			// only real name changes (matched via SchKz/WebUntis-ID), not case or accents
 			if (normalizeName(match.lastName) !== incLast || normalizeName(match.firstName) !== incFirst) {

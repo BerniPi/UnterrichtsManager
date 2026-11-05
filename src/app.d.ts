@@ -10,6 +10,8 @@ declare global {
 				totpEnabled: boolean;
 				role: 'admin' | 'teacher' | 'student';
 				displayName: string | null;
+				email: string | null;
+				entraOid: string | null;
 				isActive: boolean;
 				studentId: string | null;
 			} | null;

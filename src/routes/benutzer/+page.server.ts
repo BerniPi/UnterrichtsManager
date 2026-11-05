@@ -15,6 +15,8 @@ export interface UserWithStats {
 	id: string;
 	username: string;
 	displayName: string | null;
+	email: string | null;
+	entraOid: string | null;
 	role: 'admin' | 'teacher' | 'student';
 	isActive: boolean;
 	totpEnabled: boolean;
@@ -35,6 +37,8 @@ export const load: PageServerLoad = async ({ locals }) => {
 			u.id,
 			u.username,
 			u.display_name as displayName,
+			u.email,
+			u.entra_oid as entraOid,
 			u.role,
 			u.is_active as isActive,
 			u.totp_enabled as totpEnabled,
@@ -55,6 +59,8 @@ export const load: PageServerLoad = async ({ locals }) => {
 		id: string;
 		username: string;
 		displayName: string | null;
+		email: string | null;
+		entraOid: string | null;
 		role: 'admin' | 'teacher' | 'student';
 		isActive: number;
 		totpEnabled: number;
@@ -143,6 +149,7 @@ export const actions: Actions = {
 		requireAdmin(locals);
 		const form = await request.formData();
 		const username = form.get('username')?.toString().trim();
+		const emailRaw = form.get('email')?.toString().trim().toLowerCase() || null;
 		const displayNameRaw = form.get('displayName')?.toString().trim() || null;
 		const password = form.get('password')?.toString();
 		const role = (form.get('role')?.toString() || 'teacher') as 'admin' | 'teacher' | 'student';
@@ -165,6 +172,15 @@ export const actions: Actions = {
 			.get(username);
 		if (existing) {
 			return fail(400, { error: `Benutzername „${username}“ ist bereits vergeben.` });
+		}
+
+		if (emailRaw) {
+			const existingEmail = sqlite
+				.prepare('SELECT id FROM users WHERE LOWER(email) = LOWER(?)')
+				.get(emailRaw);
+			if (existingEmail) {
+				return fail(400, { error: `E-Mail „${emailRaw}“ ist bereits vergeben.` });
+			}
 		}
 
 		let displayName = displayNameRaw;
@@ -200,6 +216,7 @@ export const actions: Actions = {
 				.values({
 					id,
 					username,
+					email: emailRaw,
 					passwordHash,
 					totpEnabled: false,
 					createdAt: Date.now(),
@@ -219,6 +236,32 @@ export const actions: Actions = {
 		})();
 
 		return { success: true, message: `Benutzer „${username}“ erfolgreich angelegt.` };
+	},
+
+	updateEmail: async ({ request, locals }) => {
+		requireAdmin(locals);
+		const form = await request.formData();
+		const userId = form.get('userId')?.toString().trim();
+		const emailRaw = form.get('email')?.toString().trim().toLowerCase() || null;
+
+		if (!userId) {
+			return fail(400, { error: 'Benutzer-ID fehlt.' });
+		}
+		if (emailRaw) {
+			const existingEmail = sqlite
+				.prepare('SELECT id FROM users WHERE LOWER(email) = LOWER(?) AND id != ?')
+				.get(emailRaw, userId);
+			if (existingEmail) {
+				return fail(400, { error: `E-Mail „${emailRaw}“ ist bereits vergeben.` });
+			}
+		}
+
+		db.update(schema.users)
+			.set({ email: emailRaw })
+			.where(eq(schema.users.id, userId))
+			.run();
+
+		return { success: true, message: 'E-Mail-Adresse aktualisiert.' };
 	},
 
 	toggleActive: async ({ request, locals }) => {
@@ -264,6 +307,7 @@ export const actions: Actions = {
 		const userId = form.get('userId')?.toString();
 		const newRole = form.get('role')?.toString() as 'admin' | 'teacher' | 'student';
 		const displayName = form.get('displayName')?.toString().trim() || null;
+		const emailRaw = form.get('email')?.toString().trim().toLowerCase() || null;
 		const studentId = form.get('studentId')?.toString().trim() || null;
 
 		if (!userId || !['admin', 'teacher', 'student'].includes(newRole)) {
@@ -272,6 +316,15 @@ export const actions: Actions = {
 
 		const target = db.select().from(schema.users).where(eq(schema.users.id, userId)).get();
 		if (!target) return fail(404, { error: 'Benutzer nicht gefunden.' });
+
+		if (emailRaw) {
+			const existingEmail = sqlite
+				.prepare('SELECT id FROM users WHERE LOWER(email) = LOWER(?) AND id != ?')
+				.get(emailRaw, userId);
+			if (existingEmail) {
+				return fail(400, { error: `E-Mail „${emailRaw}“ ist bereits vergeben.` });
+			}
+		}
 
 		if (userId === admin.id && newRole !== 'admin') {
 			return fail(400, { error: 'Du kannst deine eigene Administrator-Rolle nicht entfernen.' });
@@ -289,6 +342,7 @@ export const actions: Actions = {
 			.set({
 				role: newRole,
 				displayName,
+				email: emailRaw,
 				studentId: newRole === 'student' ? studentId : null
 			})
 			.where(eq(schema.users.id, userId))

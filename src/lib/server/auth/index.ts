@@ -40,6 +40,8 @@ export function validateSessionToken(token: string) {
 			u.totp_enabled,
 			u.role,
 			u.display_name,
+			u.email,
+			u.entra_oid,
 			u.is_active,
 			u.student_id
 		FROM sessions s
@@ -56,6 +58,8 @@ export function validateSessionToken(token: string) {
 				totp_enabled: number;
 				role: 'admin' | 'teacher' | 'student';
 				display_name: string | null;
+				email: string | null;
+				entra_oid: string | null;
 				is_active: number;
 				student_id: string | null;
 		  }
@@ -88,6 +92,8 @@ export function validateSessionToken(token: string) {
 			totpEnabled: Boolean(row.totp_enabled),
 			role: (row.role || 'teacher') as 'admin' | 'teacher' | 'student',
 			displayName: row.display_name ?? null,
+			email: row.email ?? null,
+			entraOid: row.entra_oid ?? null,
 			isActive: Boolean(row.is_active),
 			studentId: row.student_id ?? null
 		}

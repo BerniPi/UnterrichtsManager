@@ -36,6 +36,8 @@ export function initDb() {
 			created_at INTEGER NOT NULL,
 			role TEXT NOT NULL DEFAULT 'teacher',
 			display_name TEXT,
+			email TEXT,
+			entra_oid TEXT,
 			is_active INTEGER NOT NULL DEFAULT 1,
 			student_id TEXT REFERENCES students(id) ON DELETE SET NULL
 		);
@@ -76,7 +78,8 @@ export function initDb() {
 			catalog_number INTEGER,
 			status TEXT NOT NULL DEFAULT 'active',
 			notes TEXT,
-			schkz TEXT
+			schkz TEXT,
+			email TEXT
 		);
 
 		CREATE TABLE IF NOT EXISTS courses (
@@ -344,14 +347,30 @@ export function initDb() {
 		sqlite.exec(`ALTER TABLE grading_scale_templates ADD COLUMN user_id TEXT REFERENCES users(id) ON DELETE CASCADE;`);
 	} catch (e) {}
 
+	try {
+		sqlite.exec(`ALTER TABLE users ADD COLUMN email TEXT;`);
+	} catch (e) {}
+
+	try {
+		sqlite.exec(`ALTER TABLE users ADD COLUMN entra_oid TEXT;`);
+	} catch (e) {}
+
+	try {
+		sqlite.exec(`ALTER TABLE students ADD COLUMN email TEXT;`);
+	} catch (e) {}
+
 	sqlite.exec(`
 		CREATE INDEX IF NOT EXISTS idx_students_schkz ON students(schkz);
+		CREATE INDEX IF NOT EXISTS idx_students_email ON students(email);
 		CREATE INDEX IF NOT EXISTS idx_courses_teacher ON courses(teacher_id);
 		CREATE INDEX IF NOT EXISTS idx_notes_author ON notes(author_id);
 		CREATE INDEX IF NOT EXISTS idx_templates_user ON grading_scale_templates(user_id);
 		CREATE INDEX IF NOT EXISTS idx_push_user ON push_subscriptions(user_id);
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_grading_scale_templates_default_user
 		ON grading_scale_templates(user_id) WHERE is_default = 1;
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_users_entra_oid
+		ON users(entra_oid) WHERE entra_oid IS NOT NULL;
+		CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 	`);
 
 	// One-time migration for existing multi-user ownership

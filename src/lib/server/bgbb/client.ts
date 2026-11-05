@@ -5,7 +5,7 @@ import { assignAlphabeticalCatalogNumbers, type RawStudentImport } from '../../s
 
 /**
  * Anbindung an die Bot-API von BGBB Admin (`/api/v1/bot`, Header `x-api-key`, Recht "read").
- * Übernommen werden nur Vorname, Familienname und SchKz – keine weiteren Schülerdaten.
+ * Übernommen werden Vorname, Familienname, SchKz und Benutzername/E-Mail.
  */
 
 const REQUEST_TIMEOUT_MS = 10_000;
@@ -20,6 +20,15 @@ export interface BgbbConfig {
 export interface BgbbClass {
 	klasse: string;
 	studentCount: number;
+}
+
+export interface BgbbSearchResult {
+	id: string;
+	schkz: string;
+	name: string;
+	klasse: string;
+	email?: string;
+	geb_datum?: string;
 }
 
 export class BgbbError extends Error {}
@@ -105,15 +114,46 @@ export async function fetchBgbbClasses(): Promise<BgbbClass[]> {
 
 /** Schülerliste einer BGBB-Klasse, mit alphabetisch vergebenen Katalognummern. */
 export async function fetchBgbbRoster(klasse: string): Promise<RawStudentImport[]> {
-	const data = await bgbbGet<{ students?: Array<{ schkz?: string | number | null; vorname?: string; familienname?: string }> }>(
-		`/classes/${encodeURIComponent(klasse)}`
-	);
+	const data = await bgbbGet<{
+		students?: Array<{
+			schkz?: string | number | null;
+			vorname?: string;
+			familienname?: string;
+			benutzername?: string | null;
+		}>;
+	}>(`/classes/${encodeURIComponent(klasse)}`);
 	const students = (data.students ?? [])
 		.map((s) => ({
 			firstName: String(s.vorname ?? '').trim(),
 			lastName: String(s.familienname ?? '').trim(),
-			schkz: s.schkz != null && String(s.schkz).trim() ? String(s.schkz).trim() : undefined
+			schkz: s.schkz != null && String(s.schkz).trim() ? String(s.schkz).trim() : undefined,
+			email: s.benutzername != null && String(s.benutzername).trim() ? String(s.benutzername).trim() : undefined
 		}))
 		.filter((s) => s.firstName && s.lastName);
 	return assignAlphabeticalCatalogNumbers(students);
+}
+
+/**
+ * Sucht Schüler in BGBB Admin über die Bot-API `GET /api/v1/bot/query?q=...`.
+ * Gibt bei Konfigurationsfehlern ein leeres Array zurück.
+ */
+export async function queryBgbbStudent(query: string): Promise<BgbbSearchResult[]> {
+	const q = query.trim();
+	if (!q) return [];
+	try {
+		const data = await bgbbGet<{
+			results?: Array<{
+				id: string;
+				schkz: string;
+				name: string;
+				klasse: string;
+				email?: string;
+				geb_datum?: string;
+			}>;
+		}>(`/query?q=${encodeURIComponent(q)}`);
+		return data.results ?? [];
+	} catch (e) {
+		console.warn('[BGBB] queryBgbbStudent fehlgeschlagen:', e instanceof Error ? e.message : e);
+		return [];
+	}
 }

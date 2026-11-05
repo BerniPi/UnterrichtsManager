@@ -253,6 +253,8 @@ describe('Multi-User Access & Ownership Guards', () => {
 				totpEnabled: false,
 				role: 'student',
 				displayName: null,
+				email: null,
+				entraOid: null,
 				isActive: true,
 				studentId: student1Id
 			},
@@ -269,6 +271,8 @@ describe('Multi-User Access & Ownership Guards', () => {
 				totpEnabled: false,
 				role: 'teacher',
 				displayName: null,
+				email: null,
+				entraOid: null,
 				isActive: true,
 				studentId: null
 			},
@@ -284,6 +288,8 @@ describe('Multi-User Access & Ownership Guards', () => {
 				totpEnabled: false,
 				role: 'admin',
 				displayName: null,
+				email: null,
+				entraOid: null,
 				isActive: true,
 				studentId: null
 			},

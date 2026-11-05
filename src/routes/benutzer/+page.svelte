@@ -23,6 +23,8 @@
 				id: string;
 				username: string;
 				displayName: string | null;
+				email: string | null;
+				entraOid: string | null;
 				role: 'admin' | 'teacher' | 'student';
 				isActive: boolean;
 				totpEnabled: boolean;
@@ -57,6 +59,7 @@
 	let showCreateModal = $state(false);
 	let createRole = $state<'teacher' | 'admin' | 'student'>('teacher');
 	let createUsername = $state('');
+	let createEmail = $state('');
 	let createDisplayName = $state('');
 	let createPassword = $state('');
 	let createStudentId = $state('');
@@ -66,6 +69,7 @@
 
 	let editingUser = $state<any | null>(null);
 	let editRole = $state<'teacher' | 'admin' | 'student'>('teacher');
+	let editEmail = $state('');
 	let editDisplayName = $state('');
 	let editStudentId = $state('');
 
@@ -161,9 +165,17 @@
 									{#if u.id === data.currentUserId}
 										<span class="px-1.5 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300 font-normal">Du</span>
 									{/if}
+									{#if u.entraOid}
+										<span class="px-1.5 py-0.2 rounded text-[10px] font-semibold bg-blue-950 text-blue-300 border border-blue-800" title="Mit Microsoft 365 verknüpft">
+											M365
+										</span>
+									{/if}
 								</div>
 								{#if u.displayName}
-									<div class="text-xs text-slate-400">{u.displayName}</div>
+									<div class="text-xs text-slate-300">{u.displayName}</div>
+								{/if}
+								{#if u.email}
+									<div class="text-[11px] text-slate-400 font-mono">{u.email}</div>
 								{/if}
 							</td>
 
@@ -220,6 +232,7 @@
 											editingUser = u;
 											editRole = u.role;
 											editDisplayName = u.displayName || '';
+											editEmail = u.email || '';
 											editStudentId = u.studentId || '';
 										}}
 										class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition"
@@ -423,6 +436,21 @@
 				</div>
 
 				<div>
+					<label for="cEmail" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
+						E-Mail (für Microsoft 365 SSO)
+					</label>
+					<input
+						id="cEmail"
+						name="email"
+						type="email"
+						bind:value={createEmail}
+						placeholder="vorname.nachname@bgblumenstrasse.at"
+						class="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white text-sm"
+					/>
+					<p class="text-[11px] text-slate-500 mt-1">Ermöglicht den direkten Login über Microsoft 365.</p>
+				</div>
+
+				<div>
 					<label for="cPass" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
 						Startpasswort (mind. 6 Zeichen) *
 					</label>
@@ -488,6 +516,20 @@
 						name="displayName"
 						type="text"
 						bind:value={editDisplayName}
+						class="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white text-sm"
+					/>
+				</div>
+
+				<div>
+					<label for="eEmail" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
+						E-Mail (für Microsoft 365 SSO)
+					</label>
+					<input
+						id="eEmail"
+						name="email"
+						type="email"
+						bind:value={editEmail}
+						placeholder="vorname.nachname@bgblumenstrasse.at"
 						class="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white text-sm"
 					/>
 				</div>

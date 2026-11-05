@@ -20,6 +20,19 @@ export interface StudentWithClass {
 	webuntisId: string | null;
 	status: string;
 	notes: string | null;
+	schkz?: string | null;
+	email?: string | null;
+}
+
+export interface RosterImportResult {
+	diff: ReconciliationResult;
+	stats: {
+		added: number;
+		reactivated: number;
+		updated: number;
+		left: number;
+		unchanged: number;
+	};
 }
 
 export const studentRepository = {
@@ -36,7 +49,9 @@ export const studentRepository = {
 				s.catalog_number as catalogNumber,
 				s.webuntis_id as webuntisId,
 				s.status,
-				s.notes
+				s.notes,
+				s.schkz,
+				s.email
 			FROM students s
 			JOIN classes cl ON s.class_id = cl.id
 			WHERE s.id = ?
@@ -57,7 +72,9 @@ export const studentRepository = {
 				s.catalog_number as catalogNumber,
 				s.webuntis_id as webuntisId,
 				s.status,
-				s.notes
+				s.notes,
+				s.schkz,
+				s.email
 			FROM students s
 			JOIN classes cl ON s.class_id = cl.id
 			WHERE s.class_id = ? ${onlyActive ? "AND s.status = 'active'" : ''}
@@ -73,6 +90,8 @@ export const studentRepository = {
 		catalogNumber?: number | null;
 		webuntisId?: string | null;
 		notes?: string | null;
+		schkz?: string | null;
+		email?: string | null;
 	}): string {
 		const id = crypto.randomUUID();
 		db.insert(schema.students)
@@ -84,7 +103,9 @@ export const studentRepository = {
 				catalogNumber: data.catalogNumber || null,
 				webuntisId: data.webuntisId || null,
 				status: 'active',
-				notes: data.notes || null
+				notes: data.notes || null,
+				schkz: data.schkz || null,
+				email: data.email || null
 			})
 			.run();
 		return id;
@@ -98,6 +119,8 @@ export const studentRepository = {
 			catalogNumber?: number | null;
 			webuntisId?: string | null;
 			notes?: string | null;
+			schkz?: string | null;
+			email?: string | null;
 		}
 	): void {
 		db.update(schema.students)
@@ -125,7 +148,7 @@ export const studentRepository = {
 	importRoster(classId: string, incoming: RawStudentImport[], options: { dryRun?: boolean } = {}): RosterImportResult {
 		const existing = sqlite
 			.prepare(
-				'SELECT id, first_name as firstName, last_name as lastName, webuntis_id as webuntisId, catalog_number as catalogNumber, schkz, status FROM students WHERE class_id = ?'
+				'SELECT id, first_name as firstName, last_name as lastName, webuntis_id as webuntisId, catalog_number as catalogNumber, schkz, email, status FROM students WHERE class_id = ?'
 			)
 			.all(classId) as ExistingStudent[];
 
@@ -148,7 +171,8 @@ export const studentRepository = {
 			lastName: pickName(inc.lastName, ex.lastName),
 			catalogNumber: inc.catalogNumber ?? ex.catalogNumber ?? null,
 			webuntisId: inc.webuntisId || ex.webuntisId || null,
-			schkz: inc.schkz?.trim() || ex.schkz || null
+			schkz: inc.schkz?.trim() || ex.schkz || null,
+			email: inc.email?.trim() || ex.email || null
 		});
 
 		sqlite.transaction(() => {
@@ -162,6 +186,7 @@ export const studentRepository = {
 						webuntisId: add.webuntisId || null,
 						catalogNumber: add.catalogNumber || null,
 						schkz: add.schkz?.trim() || null,
+						email: add.email?.trim() || null,
 						status: 'active'
 					})
 					.run();
@@ -192,8 +217,3 @@ export const studentRepository = {
 		return { diff, stats };
 	}
 };
-
-export interface RosterImportResult {
-	diff: ReconciliationResult;
-	stats: { added: number; reactivated: number; updated: number; left: number; unchanged: number };
-}

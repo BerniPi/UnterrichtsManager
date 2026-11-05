@@ -15,18 +15,18 @@ Beobachtungen, Stundeneinträge, Notenvorschlag, Frühwarnungen (§ 19 Abs 4 Sch
 | Styling | Tailwind CSS v4 (`src/routes/layout.css` = nur `@import 'tailwindcss'`), dunkles Slate-Design, kein `dark:` |
 | Icons | `@lucide/svelte` (`lucide-svelte` steht in package.json, wird nicht verwendet) |
 | DB | SQLite über `better-sqlite3` + Drizzle ORM (Schema/Typen), viel rohes SQL via `sqlite.prepare` |
-| Auth | Argon2 (`@node-rs/argon2`), Session-Cookie, optional TOTP (`otpauth`), Rollen (`admin`, `teacher`, `student`) |
-| Sonstiges | `web-push` (VAPID), `xlsx` + `papaparse` (Import/Export), Vitest |
+| Auth | Argon2 (`@node-rs/argon2`), Session-Cookie, optional TOTP (`otpauth`), Microsoft 365 / Entra ID SSO (OIDC/PKCE), Rollen (`admin`, `teacher`, `student`) |
+| Sonstiges | `web-push` (VAPID), `xlsx` + `papaparse` (Import/Export), Vitest (`fileParallelism: false`) |
 | Deployment | Docker (Node 24), hinter Caddy (`Caddyfile.snippet`), Backup-Skript `scripts/backup.sh` |
 
 ```
 src/
   hooks.server.ts            Session prüfen, Login-Pflicht, Rollen-Guards (Schüler/Lehrer), Seed beim Start
   lib/server/db/             index.ts (Verbindung + initDb/Migrationen), schema.ts (Drizzle), seed.ts
-  lib/server/auth/           index.ts (Sessions), totp.ts, access.ts (Rollen-/Kurs-Zugriffsschutz + Action-Guard)
+  lib/server/auth/           index.ts (Sessions), totp.ts, access.ts (Guards), entra.ts (Microsoft 365 / Entra ID SSO)
   lib/server/repositories/   Datenzugriff je Entität (*.repository.ts, Objekt-Literal `xyzRepository`)
   lib/server/reminders/      dispatcher.ts: überfällige Rückläufe, Frühwarn-Erinnerungen, Web-Push (je Lehrkraft)
-  lib/server/bgbb/           client.ts: Schülerimport aus der Bot-API von BGBB Admin
+  lib/server/bgbb/           client.ts: Schülerimport & Query aus der Bot-API von BGBB Admin
   lib/services/              reine Fachlogik (ohne HTTP), mit *.test.ts
   lib/components/course/     Tabs der Kursseite (Course*Tab.svelte)
   lib/components/assessments/ Notenschlüssel-Editor, Vorlagen-Manager, Statistik-Chart
@@ -63,6 +63,7 @@ Vitest: `expect.requireAssertions: true` → jeder Test braucht mindestens ein `
 | `DATA_DIR` | Docker: Host-Ordner für `/app/data` (Bind-Mount, Standard `./data`, Besitzer UID 1000; früher benanntes Volume `notenmanager_data`) |
 | `NODE_ENV=production` | Seed legt dann keine fiktiven Demo-Daten an |
 | `BGBB_API_URL`, `BGBB_API_KEY` | optional: Anbindung BGBB Admin; sind beide gesetzt, gehen sie den Einstellungen vor (`bgbb_api_url`, `bgbb_api_key` in `settings`) |
+| `ENTRA_TENANT_ID`, `ENTRA_CLIENT_ID`, `ENTRA_CLIENT_SECRET` | optional: Microsoft 365 / Entra ID SSO (alternativ in den Einstellungen hinterlegbar) |
 
 VAPID-Keys werden automatisch erzeugt und in `settings` gespeichert (`vapid_public_key`, `vapid_private_key`).
 
@@ -72,36 +73,40 @@ VAPID-Keys werden automatisch erzeugt und in `settings` gespeichert (`vapid_publ
 - **`teacher`** (Standard): verwaltet eigene Kurse (`courses.teacher_id = user.id`), sieht Klassen und Schüler stammdatenmäßig, auf `/schueler/[id]` und `/klassen/[id]` aber nur Noten/Daten aus eigenen Kursen bzw. eigene Notizen (`notes.author_id = user.id`).
 - **`admin`**: ist eine Lehrkraft mit Zusatzrechten. Sieht ebenfalls **nur die eigenen Kurse** (keine fremden Kurse). Darf zusätzlich:
   - Klassen anlegen, WebUntis-/BGBB-Import durchführen, Schüler anlegen/bearbeiten/deaktivieren/neu nummerieren (`/klassen`, `/klassen/[id]`, `/schueler/[id]`),
-  - BGBB-Konfiguration bearbeiten, DB-Backup herunterladen/einspielen, fiktive Testdaten zurücksetzen (`/einstellungen`, `/api/backup/*`),
-  - Benutzerverwaltung `/benutzer` nutzen (Konten anlegen, aktivieren/deaktivieren, Passwort/TOTP zurücksetzen, Kurse einem anderen Lehrer übertragen).
+  - BGBB- und Microsoft-365-Konfiguration bearbeiten, DB-Backup herunterladen/einspielen, fiktive Testdaten zurücksetzen (`/einstellungen`, `/api/backup/*`),
+  - Benutzerverwaltung `/benutzer` nutzen (Konten anlegen, aktivieren/deaktivieren, E-Mail hinterlegen, Passwort/TOTP zurücksetzen, Kurse einem anderen Lehrer übertragen).
 - **`student`**: verknüpft über `users.student_id` mit `students.id`. Hat nur Lesezugriff auf `/meine-noten` (sieht pro Kurs der eigenen Klasse die gewerteten Schularbeiten/Tests mit Punkten und Note sowie eingetragene Endnoten; keine internen Lehrernotizen, Beobachtungen oder Mitarbeits-Kommentare).
+
+### Microsoft 365 / Entra ID Single Sign-On (SSO)
+- **Aktivierung:** aktiv, sobald `tenantId`, `clientId` und `clientSecret` konfiguriert sind (über `.env` oder `/einstellungen`).
+- **Endpunkte:**
+  - `GET /auth/microsoft`: Erzeugt PKCE-Challenge, Nonce und State, legt ein kurzlebiges signiertes Cookie `m365_flow` ab und leitet zu Microsoft um (`openid profile email`, `prompt=select_account`).
+  - `GET /auth/microsoft/callback`: Validiert State und Nonce, tauscht den Code gegen Tokens aus und liest E-Mail, Name und Entra-OID aus.
+- **Benutzer-Zuordnung:**
+  - **Lehrer:** müssen vorab in `/benutzer` existieren. Der Abgleich erfolgt über die E-Mail (`users.email`), den Benutzernamen oder das Kürzel. Beim ersten Login wird `users.entra_oid` fest verknüpft.
+  - **Schüler:** werden automatisch erkannt:
+    1. Direkter Match in `students.email` (aus BGBB Admin importiert) oder Name.
+    2. Fallback: Abfrage der BGBB-Admin-Bot-API `GET /api/v1/bot/query?q=<email>`, Match über `schkz`.
+    3. Existiert noch kein Benutzer-Account für den Schüler, wird er beim ersten M365-Login automatisch in `users` angelegt (`role = 'student'`, verknüpft mit `students.id`) und direkt zu `/meine-noten` weitergeleitet.
 
 ### Guards (`hooks.server.ts` & `src/lib/server/auth/access.ts`)
 - **`hooks.server.ts`**:
   - Ruft `seedDatabase()` beim Start; ohne gültige Session Redirect 303 auf `/login`.
   - Deaktivierte Benutzer (`is_active = 0`) werden bei `validateSessionToken` sofort abgemeldet und ihre Sessions gelöscht.
-  - Schüler (`role === 'student'`) dürfen nur auf `/meine-noten`, `/logout` und öffentliche Pfade (`/login*`, `/manifest.json`, `/sw.js`, `/icon.svg`, `/api/push/public-key`); andere Seiten leiten auf `/meine-noten` um, `/api/*`-Aufrufe liefern 403.
+  - Öffentliche Pfade: `/login*`, `/auth/microsoft*`, `/manifest.json`, `/sw.js`, `/icon.svg`, `/api/push/public-key`.
+  - Schüler (`role === 'student'`) dürfen nur auf `/meine-noten`, `/logout` und öffentliche Pfade; andere Seiten leiten auf `/meine-noten` um, `/api/*`-Aufrufe liefern 403.
   - Lehrer und Admins werden bei Aufruf von `/meine-noten` auf `/` umgeleitet.
 - **`src/lib/server/auth/access.ts`**:
   - `requireUser(locals)` (401), `requireTeacher(locals)` (403 für Schüler), `requireAdmin(locals)` (403 für Nicht-Admins).
   - `assertCourseOwned(courseId, userId)`: prüft `courses.teacher_id === userId`; wirft bei fremdem oder nicht existierendem Kurs immer **404** (verhindert ID-Enumeration).
-  - `guardCourseActions(actions, { courseIdParam })` / `verifyActionOwnership(formData, userId, routeCourseId)`: umschließt alle Form Actions auf `/kurse/[id]`, `/stundenansicht` und `/`. Liest aus einem geklonten Request die FormData und prüft automatisch übergebene IDs (`courseId`, `assessmentId`, `observationId`, `lessonId`, `homeworkId`, `returnId`, `warningId`, `noteId`, Paare `entityType`/`entityId` und `type`/`id`) sowie ob `studentId` zur Klasse des eigenen Kurses gehört.
-
-### Konzept: Massen-Generieren von Schüler-Accounts aus dem BGBB-Import
-- Aktuell werden Schüler-Accounts bei Bedarf manuell in `/benutzer` angelegt und mit einem Schüler (`student_id`) verknüpft.
-- Für eine künftige Massen-Anlage aus dem BGBB-Import ist folgendes Vorgehen vorgesehen:
-  1. Voraussetzung ist eine gesetzte `students.schkz` aus dem BGBB-Import.
-  2. Pro aktivem Schüler ohne bestehenden Account (`SELECT id FROM users WHERE student_id = student.id`) wird ein Benutzer mit `role = 'student'`, `student_id = student.id`, `display_name = "<Vorname> <Nachname>"` und eindeutigem `username` (abgeleitet aus `schkz`, z. B. `s<schkz>`) erzeugt.
-  3. Dazu wird ein zufälliges Einmalpasswort generiert, mit Argon2 gehasht in `users.password_hash` gespeichert und dem Admin einmalig als druckbare/exportierbare Liste (Klasse, Name, Benutzername, Einmalpasswort) ausgegeben.
+  - `guardCourseActions(actions, { courseIdParam })` / `verifyActionOwnership(formData, userId, routeCourseId)`: umschließt alle Form Actions auf `/kurse/[id]`, `/stundenansicht` und `/`. Prüft automatisch übergebene IDs sowie Klassenzugehörigkeit von Schülern.
 
 ## Backend
 
-- **Sessions**: Cookie `notenmanager_session`, in DB als SHA-256-Hash gespeichert, 30 Tage, verlängert ab Halbzeit. `invalidateAllUserSessions(userId)` beendet alle aktiven Sessions eines Benutzers (z. B. bei Deaktivierung oder Passwort-Reset).
+- **Sessions**: Cookie `notenmanager_session`, in DB als SHA-256-Hash gespeichert, 30 Tage, verlängert ab Halbzeit. `invalidateAllUserSessions(userId)` beendet alle aktiven Sessions eines Benutzers.
 - **CSRF**: `csrf.trustedOrigins: ['*']` in `vite.config.ts`.
 - **Logik-Schichten**: Route (`+page.server.ts`, Form Actions) → Repository oder direkt `sqlite`/`db` → Services für Berechnungen.
-  Routen greifen oft auch direkt per SQL zu.
 - **Alias**: `$lib` (in `vite.config.ts` explizit gesetzt, nötig für den Prod-Build mit SvelteKit 3), zusätzlich `#lib` (package.json `imports`).
-  `npm run check` warnt deshalb über veraltetes `config.alias` und überschriebene `paths` – bekannt, kein Fehler.
 
 ### Routen
 
@@ -114,10 +119,11 @@ VAPID-Keys werden automatisch erzeugt und in `settings` gespeichert (`vapid_publ
 | `/kurse` | Eigene Kurse (Klasse + Fach) anlegen (`teacher_id` = aktueller Lehrer) |
 | `/kurse/[id]?tab=…` | Kursseite mit Tabs (nur eigener Kurs, sonst 404), größte Action-Datei (geschützt mit `guardCourseActions`) |
 | `/schueler/[id]` | Schülerkarte: Stammdaten + Kurse/Noten/Mitarbeit/Stundennotizen nur aus eigenen Kursen, eigene Notizen (`notes.author_id`); `updateStudent` nur für Admin |
-| `/einstellungen` | Benutzereinstellungen (`user_settings`), Passwort, TOTP, eigene Notenschlüssel-Vorlagen; nur Admin: BGBB-Anbindung, Backup, `resetFictionalData` |
-| `/benutzer` | Benutzerverwaltung (nur Admin): Benutzerliste, Lehrer/Admin/Schüler anlegen, aktivieren/deaktivieren, Passwort/TOTP zurücksetzen, Kurse übertragen |
+| `/einstellungen` | Benutzereinstellungen (`user_settings`), Passwort, TOTP, eigene Notenschlüssel-Vorlagen; nur Admin: BGBB-Anbindung, Microsoft-365-Konfiguration (`updateEntraSettings`), Backup, `resetFictionalData` |
+| `/benutzer` | Benutzerverwaltung (nur Admin): Benutzerliste, Lehrer/Admin/Schüler anlegen (inkl. E-Mail für M365), aktivieren/deaktivieren, Passwort/TOTP zurücksetzen, Kurse übertragen |
 | `/meine-noten` | Schüler-Ansicht (nur `role = 'student'`, read-only): Kurse der eigenen Klasse mit gewerteten Schularbeiten/Tests und Endnoten |
-| `/login`, `/logout` | Anmeldung (mit TOTP; leitet Schüler auf `/meine-noten`, Lehrer/Admin auf `/`), Abmeldung (GET+POST) |
+| `/login`, `/logout` | Anmeldung (mit Passwort/TOTP oder Microsoft 365 SSO), Abmeldung (GET+POST) |
+| `/auth/microsoft`, `/auth/microsoft/callback` | Microsoft 365 / Entra ID OIDC SSO Login-Flow |
 | `/api/backup/download`, `/api/backup/upload` | SQLite-Backup herunterladen / wiederherstellen (max. 50 MB, nur Admin) |
 | `/api/export/webuntis` | Notenliste als xlsx/csv (nur für eigene Kurse) |
 | `/api/push/public-key`, `/api/push/subscribe` | Web-Push (Abos sind an `user_id` gebunden) |
@@ -144,9 +150,9 @@ Booleans als `INTEGER 0/1`. Fremdschlüssel mit `ON DELETE CASCADE` (Ausnahmen: 
 
 | Tabelle | Zweck / Besonderheiten |
 |---|---|
-| `users`, `sessions` | Login, TOTP, `role` (`admin`/`teacher`/`student`), `display_name`, `is_active` (1/0), `student_id` → `students.id` |
+| `users`, `sessions` | Login, TOTP, `role` (`admin`/`teacher`/`student`), `display_name`, `email`, `entra_oid`, `is_active` (1/0), `student_id` → `students.id` |
 | `school_years` | Semesterenden, Notenschluss- und Frühwarnfristen, `is_current` (schulweit) |
-| `classes` → `students` | Schüler (schulweit): `catalog_number`, `webuntis_id`, `schkz` (aus BGBB Admin), `status` `active`/`inactive` |
+| `classes` → `students` | Schüler (schulweit): `catalog_number`, `webuntis_id`, `schkz` (aus BGBB Admin), `email` (M365 Benutzername), `status` `active`/`inactive` |
 | `courses` | Klasse + Fach + `teacher_id` → `users.id` + Gewichte (`weight_schularbeiten` 40, `tests` 20, `participation` 25, `observations` 10, `homework` 5) |
 | `participation_entries` | Mitarbeit `plus`/`tilde`/`minus`, **eindeutig je Kurs+Schüler+ISO-Woche** |
 | `observations` → `observation_scores` | Beobachtungen mit Punkten; `note` global bzw. je Schüler |
@@ -158,18 +164,17 @@ Booleans als `INTEGER 0/1`. Fremdschlüssel mit `ON DELETE CASCADE` (Ausnahmen: 
 | `lesson_entries` → `lesson_student_notes` | Stundeneinträge (Thema, globale Notiz) + Notiz je Schüler |
 | `notes` | Schülernotizen, `author_id` → `users.id`, `category` `elterngespraech`/`auffaelligkeit`/`foerderung`/`allgemein` |
 | `course_final_grades` | Endnote je Kurs+Schüler+Semester (`manual_grade` überschreibt Vorschlag) |
-| `settings` | Globale Key/Value-Einstellungen: Fallback-Werte, VAPID-Keys, BGBB-Konfiguration (`bgbb_api_url`, `bgbb_api_key`) |
+| `settings` | Globale Key/Value-Einstellungen: Fallback-Werte, VAPID-Keys, BGBB-Konfiguration (`bgbb_api_url`, `bgbb_api_key`), Microsoft-365-Konfiguration (`entra_tenant_id`, `entra_client_id`, `entra_client_secret`) |
 | `user_settings` | Benutzerspezifische Einstellungen `(user_id, key, value)` für `teacher_name`, `default_return_days`, `early_warning_threshold`, `email_summary_enabled` (fällt bei fehlendem Wert auf `settings` zurück) |
 | `push_subscriptions` | Web-Push-Abos je Benutzer (`user_id` → `users.id`) |
 | `grading_scale_templates` | Notenschlüssel-Vorlagen je Benutzer (`user_id` → `users.id`), eindeutiger Index `idx_grading_scale_templates_default_user` für höchstens eine Standard-Vorlage (`is_default = 1`) pro Benutzer |
 
-Eindeutige Indizes je (Eltern-ID, `student_id`) auf Ergebnissen, Rückläufen, HÜ-Status, Beobachtungs-Punkten, Stunden-Notizen.
+Eindeutige Indizes je (Eltern-ID, `student_id`) auf Ergebnissen, Rückläufen, HÜ-Status, Beobachtungs-Punkten, Stunden-Notizen; eindeutiger Index `idx_users_entra_oid` auf `users.entra_oid`.
 
 ### Migrationen
 
 - **Kein drizzle-kit-Workflow** (keine Migrationsdateien, keine drizzle.config). `initDb()` in `src/lib/server/db/index.ts`
   legt alle Tabellen mit `CREATE TABLE IF NOT EXISTS` an und läuft bei jedem Start.
-- Einmalige Multi-User-Datenübernahme in `initDb()`: existiert noch kein Admin, wird `lehrer` (sonst der älteste Benutzer) zum `admin`; alle Kurse, Notizen, Push-Abos und Vorlagen ohne Besitzer werden diesem Admin zugewiesen. Neue Lehrer erhalten über `seedTemplatesForUser(userId)` eine Kopie der vier Standard-Vorlagen.
 - Neue Spalte für bestehende DBs: in **drei Stellen** eintragen:
   1. `schema.ts` (Drizzle),
   2. `CREATE TABLE` in `initDb()`,
@@ -206,7 +211,7 @@ Eindeutige Indizes je (Eltern-ID, `student_id`) auf Ergebnissen, Rückläufen, H
   Gleicher Name mit **anderer** SchKz ist eine andere Person. Fehlende Schüler werden nur `inactive`, nie gelöscht.
   Namen werden nur bei echter Änderung überschrieben (z. B. Namenswechsel bei gleicher SchKz).
 - **BGBB-Import** (`lib/server/bgbb/client.ts`): nutzt `GET /api/v1/bot/classes` und `/classes/:klasse` von BGBB Admin
-  (Header `x-api-key`, Key mit Recht „read“). Übernommen werden nur Vorname, Familienname, SchKz; Katalognummern alphabetisch.
+  (Header `x-api-key`, Key mit Recht „read“). Übernommen werden Vorname, Familienname, SchKz und Benutzername/E-Mail; Katalognummern alphabetisch.
   Klassen werden über den Namen (ohne Groß/Klein) im aktuellen Schuljahr zugeordnet, fehlende neu angelegt.
   BGBB liefert die dort **aktive** Schuljahres-DB – passt sie nicht zum aktuellen Schuljahr hier, landen falsche Listen im Import.
   Der API-Key wird nur serverseitig verwendet und nie an den Browser geschickt (liegt aber in `settings` und damit im Backup).
