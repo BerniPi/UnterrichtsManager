@@ -50,13 +50,13 @@
 	<div class="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
 		<!-- Desktop & Tablet Top Navigation Header -->
 		<header class="sticky top-0 z-40 bg-slate-900/90 backdrop-blur border-b border-slate-800">
-			<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+			<div class="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
 				<div class="flex items-center space-x-4 lg:space-x-6 min-w-0">
 					<a href="/" class="flex items-center space-x-3 group shrink-0">
 						<div class="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white shadow-md shadow-blue-500/20 group-hover:bg-blue-500 transition">
 							<GraduationCap class="w-6 h-6" />
 						</div>
-						<div class="hidden xl:block">
+						<div class="hidden 2xl:block">
 							<span class="text-base font-bold tracking-tight text-white block leading-tight">UnterrichtsManager</span>
 							<span class="text-[11px] text-slate-400 font-medium">
 								{data.currentSchoolYear ? `Schuljahr ${data.currentSchoolYear.name}` : 'Österreich'}
@@ -70,9 +70,10 @@
 						<a
 							href="/"
 							class="px-2.5 py-2 rounded-lg text-xs lg:text-sm font-medium transition flex items-center space-x-1.5 shrink-0 {currentPath === '/' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'}"
+							title="Dashboard"
 						>
 							<LayoutDashboard class="w-4 h-4" />
-							<span class="hidden lg:inline">Dashboard</span>
+							<span class="hidden xl:inline">Dashboard</span>
 						</a>
 
 						<!-- Stundenansicht (Live Unterricht) -->
@@ -82,7 +83,7 @@
 							title="Stundenansicht (Live Unterricht)"
 						>
 							<Smartphone class="w-4 h-4" />
-							<span>Unterricht</span>
+							<span class="hidden lg:inline">Unterricht</span>
 						</a>
 
 						<div class="h-4 w-px bg-slate-800 mx-1 shrink-0"></div>
@@ -93,9 +94,10 @@
 								<a
 									href={defaultCourseId ? `/kurse/${defaultCourseId}?tab=hausuebungen` : '/kurse'}
 									class="px-2.5 py-2 text-xs lg:text-sm font-medium flex items-center space-x-1.5"
+									title="Hausübung"
 								>
 									<House class="w-4 h-4 text-emerald-400 {currentTab === 'hausuebungen' ? 'text-white' : ''}" />
-									<span>Hausübung</span>
+									<span class="hidden lg:inline">Hausübung</span>
 								</a>
 								{#if (data.coursesList?.length ?? 0) > 1}
 									<button
@@ -142,9 +144,10 @@
 								<a
 									href={defaultCourseId ? `/kurse/${defaultCourseId}?tab=tests` : '/kurse'}
 									class="px-2.5 py-2 text-xs lg:text-sm font-medium flex items-center space-x-1.5"
+									title="Tests & Schularbeiten"
 								>
 									<Award class="w-4 h-4 text-amber-400 {currentTab === 'tests' ? 'text-white' : ''}" />
-									<span>Tests & Schularbeiten</span>
+									<span class="hidden lg:inline">Tests</span>
 								</a>
 								{#if (data.coursesList?.length ?? 0) > 1}
 									<button
@@ -191,9 +194,10 @@
 								<a
 									href={defaultCourseId ? `/kurse/${defaultCourseId}?tab=beobachtungen` : '/kurse'}
 									class="px-2.5 py-2 text-xs lg:text-sm font-medium flex items-center space-x-1.5"
+									title="Beobachtungen"
 								>
 									<Eye class="w-4 h-4 text-sky-400 {currentTab === 'beobachtungen' ? 'text-white' : ''}" />
-									<span>Beobachtungen</span>
+									<span class="hidden lg:inline">Beobachtungen</span>
 								</a>
 								{#if (data.coursesList?.length ?? 0) > 1}
 									<button
@@ -240,19 +244,20 @@
 						<a
 							href="/kurse"
 							class="px-2.5 py-2 rounded-lg text-xs lg:text-sm font-medium transition flex items-center space-x-1.5 shrink-0 {currentPath.startsWith('/kurse') && (!currentTab || currentTab === 'noten' || !['hausuebungen', 'tests', 'beobachtungen'].includes(currentTab)) ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'}"
+							title="Kurse"
 						>
 							<BookOpen class="w-4 h-4" />
-							<span>Kurse</span>
+							<span class="hidden xl:inline">Kurse</span>
 						</a>
 
 						<!-- Klassen & Import -->
 						<a
 							href="/klassen"
 							class="px-2.5 py-2 rounded-lg text-xs lg:text-sm font-medium transition flex items-center space-x-1.5 shrink-0 {currentPath.startsWith('/klassen') ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'}"
+							title="Klassen & Import"
 						>
 							<Users class="w-4 h-4" />
-							<span class="hidden xl:inline">Klassen & Import</span>
-							<span class="xl:hidden">Klassen</span>
+							<span class="hidden xl:inline">Klassen</span>
 						</a>
 
 						<!-- Einstellungen -->
@@ -275,11 +280,11 @@
 							title="{data.totalOverdueCount} überfällige Unterschrift(en)"
 						>
 							<Bell class="w-3.5 h-3.5 text-red-400" />
-							<span>{data.totalOverdueCount} überfällig</span>
+							<span>{data.totalOverdueCount}<span class="hidden 2xl:inline ml-1">überfällig</span></span>
 						</a>
 					{/if}
 
-					<div class="hidden sm:flex items-center pl-2 border-l border-slate-800 space-x-2 text-sm text-slate-300">
+					<div class="hidden xl:flex items-center pl-2 border-l border-slate-800 space-x-2 text-sm text-slate-300">
 						<span class="font-medium">{data.user?.username}</span>
 					</div>
 
