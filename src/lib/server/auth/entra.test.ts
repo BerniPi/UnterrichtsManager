@@ -158,4 +158,98 @@ describe('Microsoft 365 / Entra ID Authentication', () => {
 		expect(caught).toBeInstanceOf(EntraAuthError);
 		expect(caught.userMessage).toContain('kein Zugang');
 	});
+
+	it('does NOT allow teacher takeover via username or prefix matching alone', async () => {
+		// Create a teacher account with a specific username but no email configured
+		const specialTeacherId = crypto.randomUUID();
+		db.insert(schema.users)
+			.values({
+				id: specialTeacherId,
+				username: 'bosslehrer',
+				email: null,
+				displayName: 'Boss Lehrer',
+				passwordHash: 'dummy_hash',
+				role: 'admin',
+				isActive: true,
+				createdAt: Date.now()
+			})
+			.run();
+
+		try {
+			// External/unverified account with matching prefix bosslehrer@...
+			const identity = {
+				oid: 'entra-malicious-oid',
+				email: 'bosslehrer@bgblumenstrasse.at',
+				name: 'Attacker'
+			};
+
+			let caught: any = null;
+			try {
+				await authenticateWithEntra(identity);
+			} catch (e) {
+				caught = e;
+			}
+
+			expect(caught).toBeInstanceOf(EntraAuthError);
+			expect(caught.userMessage).toContain('kein Zugang');
+
+			// Verify the original user was NOT claimed
+			const checkUser = sqlite.prepare('SELECT entra_oid FROM users WHERE id = ?').get(specialTeacherId) as any;
+			expect(checkUser.entra_oid).toBeNull();
+		} finally {
+			db.delete(schema.users).where(eq(schema.users.id, specialTeacherId)).run();
+		}
+	});
+
+	it('does NOT match student solely by name when email and schkz do not match', async () => {
+		// Existing student has name Felix Glaser and email felix.glaser@bgblumenstrasse.at
+		// Another identity with same name Felix Glaser but different email
+		const impostorIdentity = {
+			oid: 'entra-other-felix-oid',
+			email: 'felix.glaser.other@bgblumenstrasse.at',
+			name: 'Felix Glaser',
+			givenName: 'Felix',
+			familyName: 'Glaser'
+		};
+
+		let caught: any = null;
+		try {
+			await authenticateWithEntra(impostorIdentity);
+		} catch (e) {
+			caught = e;
+		}
+
+		expect(caught).toBeInstanceOf(EntraAuthError);
+		expect(caught.userMessage).toContain('kein Zugang');
+	});
+
+	it('matches student by s<schkz>@... pattern', async () => {
+		const secondStudentId = crypto.randomUUID();
+		db.insert(schema.students)
+			.values({
+				id: secondStudentId,
+				classId,
+				firstName: 'Lisa',
+				lastName: 'Muster',
+				schkz: '554433',
+				email: null,
+				status: 'active'
+			})
+			.run();
+
+		try {
+			const identity = {
+				oid: 'entra-student-lisa-oid',
+				email: 's554433@bgblumenstrasse.at',
+				name: 'Lisa Muster'
+			};
+
+			const user = await authenticateWithEntra(identity);
+			expect(user.role).toBe('student');
+			expect(user.studentId).toBe(secondStudentId);
+		} finally {
+			db.delete(schema.users).where(eq(schema.users.studentId, secondStudentId)).run();
+			db.delete(schema.students).where(eq(schema.students.id, secondStudentId)).run();
+		}
+	});
 });

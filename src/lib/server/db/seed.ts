@@ -12,54 +12,6 @@ export async function seedDatabase(force = false) {
 
 	const userCount = sqlite.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number };
 	if (userCount.count > 0 && !force) {
-		if (!isProduction) {
-			const hasLehrer2 = sqlite
-				.prepare("SELECT id FROM users WHERE username = 'lehrer2' LIMIT 1")
-				.get() as { id: string } | undefined;
-			if (!hasLehrer2) {
-				const passwordHash = await hash(adminPassword);
-				sqlite.transaction(() => {
-					const teacher2Id = crypto.randomUUID();
-					db.insert(schema.users)
-						.values({
-							id: teacher2Id,
-							username: 'lehrer2',
-							passwordHash,
-							totpEnabled: false,
-							createdAt: Date.now(),
-							role: 'teacher',
-							displayName: 'Prof. Mag. Anna Berger',
-							isActive: true
-						})
-						.run();
-					seedTemplatesForUser(teacher2Id);
-					db.insert(schema.userSettings)
-						.values([{ userId: teacher2Id, key: 'teacher_name', value: 'Prof. Mag. Anna Berger' }])
-						.onConflictDoNothing()
-						.run();
-
-					const class3B = sqlite
-						.prepare("SELECT id, school_year_id FROM classes WHERE name = '3B' LIMIT 1")
-						.get() as { id: string; school_year_id: string } | undefined;
-					if (class3B) {
-						db.insert(schema.courses)
-							.values({
-								id: crypto.randomUUID(),
-								classId: class3B.id,
-								schoolYearId: class3B.school_year_id,
-								subject: 'Biologie',
-								weightSchularbeiten: 0,
-								weightTests: 40,
-								weightParticipation: 35,
-								weightObservations: 15,
-								weightHomework: 10,
-								teacherId: teacher2Id
-							})
-							.run();
-					}
-				})();
-			}
-		}
 		return { message: 'Database already seeded' };
 	}
 

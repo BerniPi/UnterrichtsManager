@@ -89,6 +89,7 @@ export function verifyActionOwnership(
 	if (formCourseId) {
 		checkCourse(formCourseId);
 	}
+	const effectiveCourseId = formCourseId || routeCourseId;
 
 	const assessmentId = formData.get('assessmentId')?.toString().trim();
 	if (assessmentId) {
@@ -97,6 +98,9 @@ export function verifyActionOwnership(
 			.get(assessmentId) as { course_id: string } | undefined;
 		if (!row) throw error(404, 'Beurteilung nicht gefunden');
 		checkCourse(row.course_id);
+		if (effectiveCourseId && row.course_id !== effectiveCourseId) {
+			throw error(404, 'Beurteilung gehört nicht zu diesem Kurs');
+		}
 	}
 
 	const observationId = formData.get('observationId')?.toString().trim();
@@ -106,6 +110,9 @@ export function verifyActionOwnership(
 			.get(observationId) as { course_id: string } | undefined;
 		if (!row) throw error(404, 'Beobachtung nicht gefunden');
 		checkCourse(row.course_id);
+		if (effectiveCourseId && row.course_id !== effectiveCourseId) {
+			throw error(404, 'Beobachtung gehört nicht zu diesem Kurs');
+		}
 	}
 
 	const lessonId = formData.get('lessonId')?.toString().trim();
@@ -115,6 +122,9 @@ export function verifyActionOwnership(
 			.get(lessonId) as { course_id: string } | undefined;
 		if (!row) throw error(404, 'Stundeneintrag nicht gefunden');
 		checkCourse(row.course_id);
+		if (effectiveCourseId && row.course_id !== effectiveCourseId) {
+			throw error(404, 'Stundeneintrag gehört nicht zu diesem Kurs');
+		}
 	}
 
 	const homeworkId = formData.get('homeworkId')?.toString().trim();
@@ -124,6 +134,9 @@ export function verifyActionOwnership(
 			.get(homeworkId) as { course_id: string } | undefined;
 		if (!row) throw error(404, 'Hausübung nicht gefunden');
 		checkCourse(row.course_id);
+		if (effectiveCourseId && row.course_id !== effectiveCourseId) {
+			throw error(404, 'Hausübung gehört nicht zu diesem Kurs');
+		}
 	}
 
 	const checkReturn = (returnId: string) => {
@@ -139,6 +152,9 @@ export function verifyActionOwnership(
 			.get(returnId) as { course_id: string } | undefined;
 		if (!row) throw error(404, 'Rücklauf nicht gefunden');
 		checkCourse(row.course_id);
+		if (effectiveCourseId && row.course_id !== effectiveCourseId) {
+			throw error(404, 'Rücklauf gehört nicht zu diesem Kurs');
+		}
 	};
 
 	const checkWarning = (warningId: string) => {
@@ -147,6 +163,9 @@ export function verifyActionOwnership(
 			.get(warningId) as { course_id: string } | undefined;
 		if (!row) throw error(404, 'Frühwarnung nicht gefunden');
 		checkCourse(row.course_id);
+		if (effectiveCourseId && row.course_id !== effectiveCourseId) {
+			throw error(404, 'Frühwarnung gehört nicht zu diesem Kurs');
+		}
 	};
 
 	const returnId = formData.get('returnId')?.toString().trim();

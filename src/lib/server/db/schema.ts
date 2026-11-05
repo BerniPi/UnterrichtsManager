@@ -78,7 +78,7 @@ export const courses = sqliteTable('courses', {
 	weightParticipation: real('weight_participation').notNull().default(25),
 	weightObservations: real('weight_observations').notNull().default(10),
 	weightHomework: real('weight_homework').notNull().default(5),
-	teacherId: text('teacher_id').references(() => users.id, { onDelete: 'cascade' })
+	teacherId: text('teacher_id').references(() => users.id, { onDelete: 'set null' })
 });
 
 // --- Participation (Mitarbeit wöchentlich) ---
@@ -242,7 +242,7 @@ export const notes = sqliteTable('notes', {
 	category: text('category').notNull(), // 'elterngespraech' | 'auffaelligkeit' | 'foerderung' | 'allgemein'
 	title: text('title').notNull(),
 	content: text('content').notNull(),
-	authorId: text('author_id').references(() => users.id, { onDelete: 'cascade' })
+	authorId: text('author_id').references(() => users.id, { onDelete: 'set null' })
 });
 
 // --- Stundeneinträge (Lessons / Class periods) ---

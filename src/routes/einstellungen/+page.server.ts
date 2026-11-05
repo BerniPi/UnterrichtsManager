@@ -1,4 +1,4 @@
-import { fail } from '@sveltejs/kit';
+import { fail, error } from '@sveltejs/kit';
 import type { PageServerLoad, Actions } from './$types';
 import { db, sqlite } from '$lib/server/db';
 import * as schema from '$lib/server/db/schema';
@@ -236,6 +236,10 @@ export const actions: Actions = {
 		const form = await request.formData();
 		const id = form.get('id')?.toString();
 		if (!id) return fail(400, { templateError: 'Ungültige Vorlagen-ID.' });
+		const existing = gradingTemplateRepository.getById(id, user.id);
+		if (!existing) {
+			throw error(404, 'Vorlage nicht gefunden');
+		}
 		gradingTemplateRepository.setDefault(id, user.id);
 		return { templateSuccess: 'Standard-Vorlage erfolgreich geändert!' };
 	},
@@ -245,6 +249,10 @@ export const actions: Actions = {
 		const form = await request.formData();
 		const id = form.get('id')?.toString();
 		if (!id) return fail(400, { templateError: 'Ungültige Vorlagen-ID.' });
+		const existing = gradingTemplateRepository.getById(id, user.id);
+		if (!existing) {
+			throw error(404, 'Vorlage nicht gefunden');
+		}
 		const all = gradingTemplateRepository.getAll(user.id);
 		if (all.length <= 1) {
 			return fail(400, { templateError: 'Mindestens eine Vorlage muss im System verbleiben.' });

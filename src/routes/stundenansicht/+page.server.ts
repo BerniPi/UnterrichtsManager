@@ -301,7 +301,10 @@ export const actions: Actions = guardCourseActions({
 			return { success: false };
 		}
 
-		homeworkRepository.markAllDone(homeworkId, courseId);
+		const ok = homeworkRepository.markAllDone(homeworkId, courseId);
+		if (!ok) {
+			return { success: false, message: 'Hausübung gehört nicht zu diesem Kurs' };
+		}
 		return { success: true };
 	},
 

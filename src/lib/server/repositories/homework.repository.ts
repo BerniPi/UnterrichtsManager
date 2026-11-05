@@ -159,11 +159,16 @@ export const homeworkRepository = {
 		}
 	},
 
-	markAllDone(homeworkId: string, courseId: string): void {
+	markAllDone(homeworkId: string, courseId: string): boolean {
+		const hw = sqlite.prepare('SELECT course_id FROM homeworks WHERE id = ?').get(homeworkId) as {
+			course_id: string;
+		} | undefined;
+		if (!hw || hw.course_id !== courseId) return false;
+
 		const course = sqlite.prepare('SELECT class_id FROM courses WHERE id = ?').get(courseId) as {
 			class_id: string;
 		} | undefined;
-		if (!course) return;
+		if (!course) return false;
 
 		const students = sqlite
 			.prepare("SELECT id FROM students WHERE class_id = ? AND status = 'active'")
@@ -190,6 +195,7 @@ export const homeworkRepository = {
 					.run();
 			}
 		}
+		return true;
 	},
 
 	resetAll(homeworkId: string): void {

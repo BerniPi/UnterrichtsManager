@@ -1,7 +1,7 @@
 import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import Database from 'better-sqlite3';
-import { sqlite, initDb } from '$lib/server/db';
+import { sqlite, initDb, assignUnownedDataToAdmin } from '$lib/server/db';
 import { requireAdmin } from '$lib/server/auth/access';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -95,8 +95,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			sqlite.pragma('foreign_keys = ON');
 		}
 
-		// 4. Ensure structure and checkpoint
+		// 4. Ensure structure, unowned data migration and checkpoint
 		initDb();
+		assignUnownedDataToAdmin();
 		sqlite.pragma('wal_checkpoint(TRUNCATE)');
 
 		return new Response(JSON.stringify({ success: true, message: 'Datenbank erfolgreich wiederhergestellt' }), {

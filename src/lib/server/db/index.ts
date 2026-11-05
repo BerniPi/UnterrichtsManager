@@ -92,7 +92,7 @@ export function initDb() {
 			weight_participation REAL NOT NULL DEFAULT 25,
 			weight_observations REAL NOT NULL DEFAULT 10,
 			weight_homework REAL NOT NULL DEFAULT 5,
-			teacher_id TEXT REFERENCES users(id) ON DELETE CASCADE
+			teacher_id TEXT REFERENCES users(id) ON DELETE SET NULL
 		);
 
 		CREATE TABLE IF NOT EXISTS participation_entries (
@@ -216,7 +216,7 @@ export function initDb() {
 			category TEXT NOT NULL,
 			title TEXT NOT NULL,
 			content TEXT NOT NULL,
-			author_id TEXT REFERENCES users(id) ON DELETE CASCADE
+			author_id TEXT REFERENCES users(id) ON DELETE SET NULL
 		);
 
 		CREATE TABLE IF NOT EXISTS course_final_grades (
@@ -374,6 +374,10 @@ export function initDb() {
 	`);
 
 	// One-time migration for existing multi-user ownership
+	assignUnownedDataToAdmin();
+}
+
+export function assignUnownedDataToAdmin(): void {
 	try {
 		let adminRow = sqlite
 			.prepare("SELECT id FROM users WHERE role = 'admin' ORDER BY created_at ASC LIMIT 1")

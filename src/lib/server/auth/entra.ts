@@ -3,7 +3,6 @@ import { db, sqlite } from '../db';
 import * as schema from '../db/schema';
 import { eq, sql } from 'drizzle-orm';
 import { queryBgbbStudent } from '../bgbb/client';
-import { normalizeName } from '../../services/reconciliation';
 
 export const ENTRA_FLOW_COOKIE = 'm365_flow';
 export const ENTRA_CALLBACK_PATH = '/auth/microsoft/callback';
@@ -227,20 +226,22 @@ export async function handleCallback(
 		throw new EntraAuthError('Ungültiges Anmelde-Token. Bitte erneut versuchen.', 'nonce mismatch');
 	}
 
-	if (claims.tid && tenantId.toLowerCase() !== 'common' && claims.tid.toLowerCase() !== tenantId.toLowerCase()) {
+	// Strictly verify the tenant. Multi-tenant 'common' is forbidden to prevent unverified private account logins.
+	if (!claims.tid || claims.tid.toLowerCase() !== tenantId.toLowerCase()) {
 		throw new EntraAuthError('Dieses Microsoft-Konto gehört nicht zur Schule.', `unexpected tenant ${claims.tid}`);
 	}
 
-	const email = String(claims.email || claims.preferred_username || '').trim().toLowerCase();
+	// In Entra ID, preferred_username or upn is the verified organizational identity.
+	const verifiedUser = String(claims.preferred_username || claims.upn || claims.email || '').trim().toLowerCase();
 	const oid = String(claims.oid || claims.sub || '').trim();
 
-	if (!oid || !email) {
-		throw new EntraAuthError('Das Microsoft-Konto liefert keine E-Mail-Adresse.', 'missing oid or email');
+	if (!oid || !verifiedUser) {
+		throw new EntraAuthError('Das Microsoft-Konto liefert keine gültige Schul-Benutzerkennung.', 'missing oid or user identity');
 	}
 
 	return {
 		oid,
-		email,
+		email: verifiedUser,
 		name: String(claims.name || '').trim(),
 		givenName: claims.given_name ? String(claims.given_name).trim() : undefined,
 		familyName: claims.family_name ? String(claims.family_name).trim() : undefined
@@ -249,6 +250,9 @@ export async function handleCallback(
 
 /**
  * Maps an authenticated Microsoft identity to an existing teacher or an imported student.
+ * Security rules:
+ * 1. Teachers: Only matched by entra_oid or by an explicitly stored users.email. Never by username or prefix.
+ * 2. Students: Only matched by exact students.email or SchKz. Never by name alone.
  */
 export async function authenticateWithEntra(identity: EntraIdentity): Promise<{
 	id: string;
@@ -261,25 +265,20 @@ export async function authenticateWithEntra(identity: EntraIdentity): Promise<{
 	studentId: string | null;
 }> {
 	const emailLower = identity.email.toLowerCase();
-	const emailPrefix = emailLower.includes('@') ? emailLower.split('@')[0] : emailLower;
 
-	// 1. Check teachers / admins (must be manually created prior)
-	const teacher = sqlite
+	// 1. Check teachers / admins
+	// First match by previously bound entra_oid
+	let teacher = sqlite
 		.prepare(
 			`
 		SELECT id, username, role, display_name, email, entra_oid, is_active, student_id
 		FROM users
 		WHERE role IN ('teacher', 'admin')
-		  AND (
-		    entra_oid = ?
-		    OR LOWER(COALESCE(email, '')) = ?
-		    OR LOWER(username) = ?
-		    OR LOWER(username) = ?
-		  )
+		  AND entra_oid = ?
 		LIMIT 1
 	`
 		)
-		.get(identity.oid, emailLower, emailLower, emailPrefix) as
+		.get(identity.oid) as
 		| {
 				id: string;
 				username: string;
@@ -291,6 +290,23 @@ export async function authenticateWithEntra(identity: EntraIdentity): Promise<{
 				student_id: string | null;
 		  }
 		| undefined;
+
+	// If not yet bound to entra_oid: ONLY match if an explicit email address is stored on the user
+	// and exactly matches identity.email. Never match against generic username or email prefix!
+	if (!teacher) {
+		teacher = sqlite
+			.prepare(
+				`
+			SELECT id, username, role, display_name, email, entra_oid, is_active, student_id
+			FROM users
+			WHERE role IN ('teacher', 'admin')
+			  AND email IS NOT NULL
+			  AND LOWER(email) = ?
+			LIMIT 1
+		`
+			)
+			.get(emailLower) as any;
+	}
 
 	if (teacher) {
 		if (!teacher.is_active) {
@@ -319,21 +335,19 @@ export async function authenticateWithEntra(identity: EntraIdentity): Promise<{
 	}
 
 	// 2. Check students
-	// A. Match in local students table
+	// A. Exact match in local students table by email
 	let student = sqlite
 		.prepare(
 			`
 		SELECT id, class_id, first_name, last_name, schkz, email, status
 		FROM students
 		WHERE status = 'active'
-		  AND (
-		    LOWER(COALESCE(email, '')) = ?
-		    OR LOWER(COALESCE(email, '')) = ?
-		  )
+		  AND email IS NOT NULL
+		  AND LOWER(email) = ?
 		LIMIT 1
 	`
 		)
-		.get(emailLower, emailPrefix) as
+		.get(emailLower) as
 		| {
 				id: string;
 				class_id: string;
@@ -345,40 +359,32 @@ export async function authenticateWithEntra(identity: EntraIdentity): Promise<{
 		  }
 		| undefined;
 
-	// B. Try matching by given name + family name from M365 claims
-	if (!student && identity.givenName && identity.familyName) {
-		const targetFirst = normalizeName(identity.givenName);
-		const targetLast = normalizeName(identity.familyName);
-		const activeStudents = sqlite
-			.prepare('SELECT id, class_id, first_name, last_name, schkz, email, status FROM students WHERE status = "active"')
-			.all() as Array<{
-			id: string;
-			class_id: string;
-			first_name: string;
-			last_name: string;
-			schkz: string | null;
-			email: string | null;
-			status: string;
-		}>;
-
-		student = activeStudents.find(
-			(s) => normalizeName(s.first_name) === targetFirst && normalizeName(s.last_name) === targetLast
-		);
+	// B. Check if identity email contains student SchKz (e.g. s12345@...)
+	if (!student) {
+		const schkzMatch = emailLower.match(/^s(\d+)@/);
+		if (schkzMatch) {
+			const candidateSchkz = schkzMatch[1];
+			student = sqlite
+				.prepare("SELECT id, class_id, first_name, last_name, schkz, email, status FROM students WHERE status = 'active' AND schkz = ? LIMIT 1")
+				.get(candidateSchkz) as any;
+		}
 	}
 
-	// C. Query BGBB Admin Bot API if student is not found locally yet
+	// C. Exact query in BGBB Admin Bot API by full email address
 	if (!student) {
 		const bgbbResults = await queryBgbbStudent(emailLower);
-		const hit = bgbbResults[0] || (await queryBgbbStudent(emailPrefix))[0];
-		if (hit && hit.schkz) {
+		const exactHit = bgbbResults.find(
+			(r) => r.email && r.email.trim().toLowerCase() === emailLower && r.schkz
+		);
+		if (exactHit && exactHit.schkz) {
 			student = sqlite
-				.prepare('SELECT id, class_id, first_name, last_name, schkz, email, status FROM students WHERE schkz = ? LIMIT 1')
-				.get(hit.schkz) as any;
+				.prepare("SELECT id, class_id, first_name, last_name, schkz, email, status FROM students WHERE status = 'active' AND schkz = ? LIMIT 1")
+				.get(exactHit.schkz) as any;
 		}
 	}
 
 	if (student) {
-		// Update student's email in students table if missing
+		// Update student's email in students table if missing or different
 		if (!student.email || student.email.toLowerCase() !== emailLower) {
 			db.update(schema.students)
 				.set({ email: identity.email })
@@ -394,7 +400,7 @@ export async function authenticateWithEntra(identity: EntraIdentity): Promise<{
 			FROM users
 			WHERE student_id = ?
 			   OR entra_oid = ?
-			   OR LOWER(COALESCE(email, '')) = ?
+			   OR (email IS NOT NULL AND LOWER(email) = ?)
 			LIMIT 1
 		`
 			)

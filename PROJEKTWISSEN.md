@@ -46,9 +46,9 @@ data/notenmanager.db         lokale DB (gitignored)
 | Build | `npm run build` → `build/`, Start mit `node build/index.js` |
 | Docker | `docker compose up -d --build` (`.env` aus `.env.example`) |
 
-Lokaler Login (Seed):
+Lokaler Login (Seed beim ersten Start mit leerer DB):
 - Admin/Lehrer 1: `lehrer` / `notenmanager123` (oder `ADMIN_PASSWORD`) – Kurse `3B Mathematik`, `3B Physik`, `7A Physik`
-- Demo-Lehrer 2 (nur Dev): `lehrer2` / `notenmanager123` – Kurs `3B Biologie`
+- Demo-Lehrer 2 (nur Dev): `lehrer2` / `notenmanager123` – Kurs `3B Biologie` (wird nur beim ersten DB-Setup angelegt, nicht bei jedem Neustart)
 
 Vitest: `expect.requireAssertions: true` → jeder Test braucht mindestens ein `expect`.
 
@@ -79,15 +79,20 @@ VAPID-Keys werden automatisch erzeugt und in `settings` gespeichert (`vapid_publ
 
 ### Microsoft 365 / Entra ID Single Sign-On (SSO)
 - **Aktivierung:** aktiv, sobald `tenantId`, `clientId` und `clientSecret` konfiguriert sind (über `.env` oder `/einstellungen`).
+- **Sicherheitsanforderungen:**
+  - Multi-Tenant `common` ist strikt verboten; es wird immer die exakte Schul-Tenant-ID im Token geprüft (`claims.tid === tenantId`).
+  - Als Identität werden nur verifizierte Organisations-Attribute (`preferred_username` oder `upn`) akzeptiert.
 - **Endpunkte:**
   - `GET /auth/microsoft`: Erzeugt PKCE-Challenge, Nonce und State, legt ein kurzlebiges signiertes Cookie `m365_flow` ab und leitet zu Microsoft um (`openid profile email`, `prompt=select_account`).
   - `GET /auth/microsoft/callback`: Validiert State und Nonce, tauscht den Code gegen Tokens aus und liest E-Mail, Name und Entra-OID aus.
 - **Benutzer-Zuordnung:**
-  - **Lehrer:** müssen vorab in `/benutzer` existieren. Der Abgleich erfolgt über die E-Mail (`users.email`), den Benutzernamen oder das Kürzel. Beim ersten Login wird `users.entra_oid` fest verknüpft.
-  - **Schüler:** werden automatisch erkannt:
-    1. Direkter Match in `students.email` (aus BGBB Admin importiert) oder Name.
-    2. Fallback: Abfrage der BGBB-Admin-Bot-API `GET /api/v1/bot/query?q=<email>`, Match über `schkz`.
-    3. Existiert noch kein Benutzer-Account für den Schüler, wird er beim ersten M365-Login automatisch in `users` angelegt (`role = 'student'`, verknüpft mit `students.id`) und direkt zu `/meine-noten` weitergeleitet.
+  - **Lehrer:** müssen vorab in `/benutzer` existieren. Die Zuordnung erfolgt **ausschließlich** über die hinterlegte OID (`users.entra_oid`) oder eine explizit vom Admin hinterlegte E-Mail (`users.email`). Ein Matching über Benutzernamen oder den Teil vor dem `@` ist untersagt, um feindliche Übernahmen (z.B. Admin-Konto `lehrer`) auszuschließen. Beim ersten Login wird `users.entra_oid` fest verknüpft.
+  - **Schüler:** werden anhand eindeutiger Kennungen erkannt:
+    1. Direkter Match in `students.email` (aus BGBB Admin importiert).
+    2. Schüler-Kennung im UPN: Muster `s<schkz>@...` gleicht direkt gegen `students.schkz` ab.
+    3. Fallback: Abfrage der BGBB-Admin-Bot-API `GET /api/v1/bot/query?q=<email>`; der Treffer wird exakt auf die E-Mail geprüft und dann über die SchKz zugeordnet.
+    - **Wichtig:** Eine Zuordnung nur über Vor- und Nachname ist strikt untersagt („Gleicher Name mit anderer SchKz ist eine andere Person“).
+    4. Existiert noch kein Benutzer-Account für den Schüler, wird er beim ersten M365-Login automatisch in `users` angelegt (`role = 'student'`, verknüpft mit `students.id`) und direkt zu `/meine-noten` weitergeleitet.
 
 ### Guards (`hooks.server.ts` & `src/lib/server/auth/access.ts`)
 - **`hooks.server.ts`**:
@@ -146,7 +151,7 @@ Tab-IDs der Kursseite: `noten`, `hausuebungen`, `tests`, `beobachtungen` (Hauptt
 ## Datenmodell
 
 IDs sind `TEXT` (`crypto.randomUUID()`), Datumsfelder `TEXT` im Format `YYYY-MM-DD`, Zeitstempel `INTEGER` (ms).
-Booleans als `INTEGER 0/1`. Fremdschlüssel mit `ON DELETE CASCADE` (Ausnahmen: `notes.course_id` → `SET NULL`, `users.student_id` → `SET NULL`).
+Booleans als `INTEGER 0/1`. Fremdschlüssel mit `ON DELETE CASCADE` (Ausnahmen: `notes.course_id` → `SET NULL`, `users.student_id` → `SET NULL`, `courses.teacher_id` → `SET NULL`, `notes.author_id` → `SET NULL`).
 
 | Tabelle | Zweck / Besonderheiten |
 |---|---|

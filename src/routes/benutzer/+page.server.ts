@@ -334,8 +334,33 @@ export const actions: Actions = {
 			return fail(400, { error: 'Der letzte aktive Administrator muss erhalten bleiben.' });
 		}
 
-		if (newRole === 'student' && !studentId) {
-			return fail(400, { error: 'Für einen Schüler-Account muss ein Schüler verknüpft sein.' });
+		if (newRole === 'student') {
+			if (!studentId) {
+				return fail(400, { error: 'Für einen Schüler-Account muss ein Schüler verknüpft sein.' });
+			}
+			const student = sqlite
+				.prepare('SELECT id FROM students WHERE id = ?')
+				.get(studentId) as { id: string } | undefined;
+			if (!student) {
+				return fail(400, { error: 'Ausgewählter Schüler existiert nicht.' });
+			}
+			const alreadyLinked = sqlite
+				.prepare('SELECT id, username FROM users WHERE student_id = ? AND id != ?')
+				.get(studentId, userId) as { id: string; username: string } | undefined;
+			if (alreadyLinked) {
+				return fail(400, {
+					error: `Dieser Schüler ist bereits mit dem Konto „${alreadyLinked.username}“ verknüpft.`
+				});
+			}
+
+			const courseCountRow = sqlite
+				.prepare('SELECT COUNT(*) as count FROM courses WHERE teacher_id = ?')
+				.get(userId) as { count: number };
+			if (courseCountRow.count > 0) {
+				return fail(400, {
+					error: `Dieser Benutzer besitzt noch ${courseCountRow.count} Kurs(e). Bitte diese vor dem Wechsel zur Schüler-Rolle auf eine andere Lehrkraft übertragen.`
+				});
+			}
 		}
 
 		db.update(schema.users)
