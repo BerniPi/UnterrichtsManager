@@ -21,6 +21,8 @@ export async function seedDatabase(force = false) {
 		if (force) {
 			sqlite.exec(`
 				DELETE FROM reminder_logs;
+				DELETE FROM timetable_course_links;
+				DELETE FROM timetable_events;
 				DELETE FROM push_subscriptions;
 				DELETE FROM lesson_student_notes;
 				DELETE FROM lesson_entries;

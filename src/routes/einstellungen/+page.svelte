@@ -15,6 +15,7 @@
 		Link2
 	} from '@lucide/svelte';
 	import GradingTemplatesManager from '$lib/components/assessments/GradingTemplatesManager.svelte';
+	import TimetableSettings, { type TimetableSettingsData } from '$lib/components/settings/TimetableSettings.svelte';
 
 	interface Props {
 		data: {
@@ -29,6 +30,7 @@
 			gradingTemplates: Array<any>;
 			bgbb: { apiUrl: string; apiKeySet: boolean; fromEnv: boolean };
 			entra: { tenantId: string; clientId: string; clientSecretSet: boolean; fromEnv: boolean; enabled: boolean };
+			timetable: TimetableSettingsData;
 		};
 		form?: any;
 	}
@@ -186,6 +188,9 @@
 			</div>
 		</form>
 	</div>
+
+	<!-- Section: WebUntis-Stundenplan (für alle Lehrkräfte) -->
+	<TimetableSettings timetable={data.timetable} {form} />
 
 	{#if data.isAdmin}
 		<!-- Section: Anbindung BGBB Admin (Schülerimport) -->

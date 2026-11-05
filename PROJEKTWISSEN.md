@@ -7,7 +7,8 @@
 ## Überblick
 
 Multi-User-Web-App für Lehrkräfte, Administration und Schüler (österr. Schulsystem, Mathe/Physik u. a.): Mitarbeit, Hausübungen, Tests/Schularbeiten,
-Beobachtungen, Stundeneinträge, Notenvorschlag, Frühwarnungen (§ 19 Abs 4 SchUG), Rücklauf-Fristen, WebUntis-/BGBB-Import und -Export.
+Beobachtungen, Stundeneinträge, Notenvorschlag, Frühwarnungen (§ 19 Abs 4 SchUG), Rücklauf-Fristen, WebUntis-/BGBB-Import und -Export,
+WebUntis-Stundenplan je Lehrkraft (ICS-Abo).
 
 | Bereich | Technik |
 |---|---|
@@ -27,9 +28,11 @@ src/
   lib/server/repositories/   Datenzugriff je Entität (*.repository.ts, Objekt-Literal `xyzRepository`)
   lib/server/reminders/      dispatcher.ts: überfällige Rückläufe, Frühwarn-Erinnerungen, Web-Push (je Lehrkraft)
   lib/server/bgbb/           client.ts: Schülerimport & Query aus der Bot-API von BGBB Admin
+  lib/server/webuntis/       timetable.ts: Abruf/Abgleich des WebUntis-Stundenplans (ICS), Tages-Timer
   lib/services/              reine Fachlogik (ohne HTTP), mit *.test.ts
   lib/components/course/     Tabs der Kursseite (Course*Tab.svelte)
   lib/components/assessments/ Notenschlüssel-Editor, Vorlagen-Manager, Statistik-Chart
+  lib/components/settings/   TimetableSettings.svelte (WebUntis-Stundenplan in /einstellungen)
   routes/                    Seiten + API
 static/                      manifest.json, sw.js (Push), icon.svg
 data/notenmanager.db         lokale DB (gitignored)
@@ -96,7 +99,7 @@ VAPID-Keys werden automatisch erzeugt und in `settings` gespeichert (`vapid_publ
 
 ### Guards (`hooks.server.ts` & `src/lib/server/auth/access.ts`)
 - **`hooks.server.ts`**:
-  - Ruft `seedDatabase()` beim Start; ohne gültige Session Redirect 303 auf `/login`.
+  - Ruft `seedDatabase()` und `startTimetableScheduler()` beim Start; ohne gültige Session Redirect 303 auf `/login`.
   - Deaktivierte Benutzer (`is_active = 0`) werden bei `validateSessionToken` sofort abgemeldet und ihre Sessions gelöscht.
   - Öffentliche Pfade: `/login*`, `/auth/microsoft*`, `/manifest.json`, `/sw.js`, `/icon.svg`, `/api/push/public-key`.
   - Schüler (`role === 'student'`) dürfen nur auf `/meine-noten`, `/logout` und öffentliche Pfade; andere Seiten leiten auf `/meine-noten` um, `/api/*`-Aufrufe liefern 403.
@@ -117,14 +120,14 @@ VAPID-Keys werden automatisch erzeugt und in `settings` gespeichert (`vapid_publ
 
 | Route | Inhalt / wichtige Actions |
 |---|---|
-| `/` | Dashboard (eigene Kurse): überfällige Rückläufe, Frühwarn-Erinnerungen; `markReturnSigned`, `snooze`, `recordAsked`, `triggerPushCheck` … (geschützt mit `guardCourseActions`) |
-| `/stundenansicht` | Mobile Erfassung im Unterricht (eigene Kurse): `setParticipation`, `setHomeworkStatus`, `quickNote`, Stundennotizen, Rücklauf-Schnellaktionen (geschützt mit `guardCourseActions`) |
+| `/` | Dashboard (eigene Kurse): überfällige Rückläufe, Frühwarn-Erinnerungen, Prüfungen der nächsten 14 Tage laut WebUntis; `markReturnSigned`, `snooze`, `recordAsked`, `triggerPushCheck` … (geschützt mit `guardCourseActions`) |
+| `/stundenansicht` | Mobile Erfassung im Unterricht (eigene Kurse): ohne `courseId` wird laut WebUntis die aktuelle/nächste Stunde gewählt; `setParticipation`, `setHomeworkStatus`, `quickNote`, Stundennotizen, Rücklauf-Schnellaktionen (geschützt mit `guardCourseActions`) |
 | `/klassen` | Klassenübersicht; nur Admin: Klassen anlegen (`create`), WebUntis-Import (`parseUpload` → `commitImport`), BGBB-Import (`bgbbLoadClasses` → `bgbbPreview` → `bgbbCommit`) |
 | `/klassen/[id]` | Schülerliste & eigene Kurse der Klasse; nur Admin: `addStudent`, `toggleStatus`, `renumberAlphabetically`, `updateStudent` |
 | `/kurse` | Eigene Kurse (Klasse + Fach) anlegen (`teacher_id` = aktueller Lehrer) |
-| `/kurse/[id]?tab=…` | Kursseite mit Tabs (nur eigener Kurs, sonst 404), größte Action-Datei (geschützt mit `guardCourseActions`) |
+| `/kurse/[id]?tab=…` | Kursseite mit Tabs (nur eigener Kurs, sonst 404), größte Action-Datei (geschützt mit `guardCourseActions`); WebUntis: Lücken im Tab `stunden`, Prüfungsvorschläge im Tab `tests` (`dismissTimetableExam`) |
 | `/schueler/[id]` | Schülerkarte: Stammdaten + Kurse/Noten/Mitarbeit/Stundennotizen nur aus eigenen Kursen, eigene Notizen (`notes.author_id`); `updateStudent` nur für Admin |
-| `/einstellungen` | Benutzereinstellungen (`user_settings`), Passwort, TOTP, eigene Notenschlüssel-Vorlagen; nur Admin: BGBB-Anbindung, Microsoft-365-Konfiguration (`updateEntraSettings`), Backup, `resetFictionalData` |
+| `/einstellungen` | Benutzereinstellungen (`user_settings`), Passwort, TOTP, eigene Notenschlüssel-Vorlagen, WebUntis-Stundenplan (`saveTimetableUrl`, `syncTimetableNow`, `removeTimetable`, `saveTimetableLinks`); nur Admin: BGBB-Anbindung, Microsoft-365-Konfiguration (`updateEntraSettings`), Backup, `resetFictionalData` |
 | `/benutzer` | Benutzerverwaltung (nur Admin): Benutzerliste, Lehrer/Admin/Schüler anlegen (inkl. E-Mail für M365), aktivieren/deaktivieren, Passwort/TOTP zurücksetzen, Kurse übertragen |
 | `/meine-noten` | Schüler-Ansicht (nur `role = 'student'`, read-only): Kurse der eigenen Klasse mit gewerteten Schularbeiten/Tests und Endnoten |
 | `/login`, `/logout` | Anmeldung (mit Passwort/TOTP oder Microsoft 365 SSO), Abmeldung (GET+POST) |
@@ -170,7 +173,9 @@ Booleans als `INTEGER 0/1`. Fremdschlüssel mit `ON DELETE CASCADE` (Ausnahmen: 
 | `notes` | Schülernotizen, `author_id` → `users.id`, `category` `elterngespraech`/`auffaelligkeit`/`foerderung`/`allgemein` |
 | `course_final_grades` | Endnote je Kurs+Schüler+Semester (`manual_grade` überschreibt Vorschlag) |
 | `settings` | Globale Key/Value-Einstellungen: Fallback-Werte, VAPID-Keys, BGBB-Konfiguration (`bgbb_api_url`, `bgbb_api_key`), Microsoft-365-Konfiguration (`entra_tenant_id`, `entra_client_id`, `entra_client_secret`) |
-| `user_settings` | Benutzerspezifische Einstellungen `(user_id, key, value)` für `teacher_name`, `default_return_days`, `early_warning_threshold`, `email_summary_enabled` (fällt bei fehlendem Wert auf `settings` zurück) |
+| `user_settings` | Benutzerspezifische Einstellungen `(user_id, key, value)` für `teacher_name`, `default_return_days`, `early_warning_threshold`, `email_summary_enabled` (fällt bei fehlendem Wert auf `settings` zurück); außerdem `webuntis_ics_url`, `webuntis_last_sync`, `webuntis_last_error` (nur über `timetableRepository`, kein Fallback) |
+| `timetable_events` | Stundenplan-Termine je Lehrkraft aus WebUntis, eindeutig je `(user_id, uid)`; `kind` `lesson`/`exam`/`other`, `class_code` (klein), `subject_code` (groß), `exam_type`, `status` `scheduled`/`cancelled`, `exam_dismissed` |
+| `timetable_course_links` | Zuordnung Kurs ↔ WebUntis-Klasse + Fachkürzel (`course_id` PK, eindeutig je `(user_id, class_code, subject_code)`) |
 | `push_subscriptions` | Web-Push-Abos je Benutzer (`user_id` → `users.id`) |
 | `grading_scale_templates` | Notenschlüssel-Vorlagen je Benutzer (`user_id` → `users.id`), eindeutiger Index `idx_grading_scale_templates_default_user` für höchstens eine Standard-Vorlage (`is_default = 1`) pro Benutzer |
 
@@ -222,7 +227,21 @@ Eindeutige Indizes je (Eltern-ID, `student_id`) auf Ergebnissen, Rückläufen, H
   Der API-Key wird nur serverseitig verwendet und nie an den Browser geschickt (liegt aber in `settings` und damit im Backup).
 - **Datum/Zeitzone**: `services/dates.ts` verwenden (`todayVienna`, `addDays` in UTC-Arithmetik, `getIsoWeekAndYear`).
   Achtung: einige Stellen nutzen noch `new Date().toISOString().slice(0, 10)` (UTC) – kann kurz nach Mitternacht abweichen.
-- **Push** wird nur manuell ausgelöst (Action `triggerPushCheck` auf `/`), es gibt keinen Zeitplan im Server. `runReminderCheck` prüft je aktiver Lehrkraft deren eigene Kurse und sendet die Push-Benachrichtigung ausschließlich an die eigenen Push-Abos (`push_subscriptions.user_id`).
+- **Push** wird nur manuell ausgelöst (Action `triggerPushCheck` auf `/`); der einzige Zeitplan im Server ist der WebUntis-Abgleich. `runReminderCheck` prüft je aktiver Lehrkraft deren eigene Kurse und sendet die Push-Benachrichtigung ausschließlich an die eigenen Push-Abos (`push_subscriptions.user_id`).
+- **WebUntis-Stundenplan** (`services/ical.ts`, `services/timetable.ts`, `lib/server/webuntis/timetable.ts`):
+  - Jede Lehrkraft hinterlegt ihren persönlichen ICS-Link (`ical_export?…&token=…`) selbst. Er enthält ein Token: nur serverseitig verwenden,
+    nie an den Browser senden; nur `https://*.webuntis.com` ohne Zugangsdaten/Ports, Abruf ohne Weiterleitungen, max. 5 MB, 20 s Timeout.
+  - Format (WebUntis/iCal4j): ein VEVENT pro Unterrichtsstunde, `DTSTART;TZID=Europe/Vienna`, `UID` = `<Unterrichts-ID>-<Stunden-ID>`,
+    `SUMMARY` = `<Klasse> <Fach>` (Stunde) bzw. `[Schularbeit|Test|schriftliche Wdh.] <Klasse> <Fach> <Titel>` (Prüfung ersetzt die Stunde).
+    Sprechstunden und Veranstaltungen mehrerer Klassen sind `other`. Alle Termine kommen als `STATUS:CONFIRMED`.
+  - Der Feed enthält nur die laufende Woche und die Zukunft (~4 Monate). Bereits gespeicherte, vergangene Termine bleiben daher erhalten;
+    zukünftige Termine im Feed-Zeitraum, die fehlen, werden `cancelled`. Ein leerer Feed storniert nichts.
+  - Abgleich: beim Speichern des Links, Button „Jetzt abgleichen“, im Hintergrund beim Aufruf von `/`, `/stundenansicht`, `/kurse/[id]`
+    (wenn Stand > 6 h) und durch einen stündlichen Timer (Lehrkräfte mit Stand > 20 h → mindestens täglich).
+  - Kurs-Zuordnung über Klasse (ohne Groß/Klein) + Fachkürzel (Kürzeltabelle in `services/timetable.ts`); eindeutige Treffer im aktuellen
+    Schuljahr werden beim Abgleich automatisch zugeordnet, sonst manuell in `/einstellungen`.
+  - Lücken: Unterrichtstag mit gehaltener Stunde und ohne `lesson_entries` am selben Datum (Tage nur mit Prüfung zählen nicht).
+    Prüfungsvorschlag: Prüfung (Doppelstunden zusammengefasst) ohne Beurteilung am selben Datum im Kurs, nicht älter als 60 Tage.
 - **Seed**: nur wenn noch kein User existiert; Demo-Daten nur ohne `NODE_ENV=production` (inkl. zweitem Demo-Lehrer `lehrer2`), ausschließlich fiktive Namen.
 
 ## Arbeitsweise

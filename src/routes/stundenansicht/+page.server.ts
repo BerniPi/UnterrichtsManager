@@ -8,13 +8,34 @@ import { getIsoWeekAndYear } from '$lib/services/dates';
 import { lessonRepository } from '$lib/server/repositories/lesson.repository';
 import { homeworkRepository } from '$lib/server/repositories/homework.repository';
 import { requireTeacher, guardCourseActions } from '$lib/server/auth/access';
+import { timetableRepository } from '$lib/server/repositories/timetable.repository';
+import { syncTimetableIfStale } from '$lib/server/webuntis/timetable';
+import { toVienna } from '$lib/services/ical';
+import { pickCurrentLesson } from '$lib/services/timetable';
 
 export const load: PageServerLoad = async ({ url, parent, locals }) => {
-	requireTeacher(locals);
+	const user = requireTeacher(locals);
 	const layoutData = await parent();
 	const courses = layoutData.coursesList || [];
 
-	const selectedCourseId = url.searchParams.get('courseId') || courses[0]?.id;
+	// WebUntis: heutige Stunden der eigenen Kurse; ohne courseId wird die aktuelle Stunde gewählt
+	syncTimetableIfStale(user.id);
+	const nowVienna = toVienna(new Date());
+	const courseIds = new Set(courses.map((c) => c.id));
+	const scheduleToday = timetableRepository
+		.getLinkedEvents(user.id, nowVienna.date, nowVienna.date)
+		.filter((e) => e.status === 'scheduled' && e.kind !== 'other' && courseIds.has(e.courseId))
+		.map((e) => ({
+			courseId: e.courseId,
+			startTime: e.startTime,
+			endTime: e.endTime,
+			date: e.date,
+			location: e.location,
+			examTitle: e.kind === 'exam' ? e.examTitle : null
+		}));
+	const currentLesson = pickCurrentLesson(scheduleToday, nowVienna);
+
+	const selectedCourseId = url.searchParams.get('courseId') || currentLesson?.courseId || courses[0]?.id;
 	const selectedCourse = courses.find((c) => c.id === selectedCourseId) || courses[0];
 
 	if (!selectedCourse) {
@@ -22,7 +43,9 @@ export const load: PageServerLoad = async ({ url, parent, locals }) => {
 			courses,
 			selectedCourse: null,
 			studentsWithDetails: [],
-			activeHomework: null
+			activeHomework: null,
+			scheduleToday,
+			currentLesson: null
 		};
 	}
 
@@ -223,7 +246,17 @@ export const load: PageServerLoad = async ({ url, parent, locals }) => {
 		activeHomework,
 		studentsWithDetails,
 		activeLesson,
-		recentLessons
+		recentLessons,
+		scheduleToday,
+		// Stunde des gewählten Kurses: die aktuelle, sonst die nächste/letzte heute
+		currentLesson:
+			(currentLesson?.courseId === selectedCourse.id ? currentLesson : null) ??
+			pickCurrentLesson(
+				scheduleToday.filter((l) => l.courseId === selectedCourse.id),
+				nowVienna
+			) ??
+			scheduleToday.filter((l) => l.courseId === selectedCourse.id).at(-1) ??
+			null
 	};
 };
 

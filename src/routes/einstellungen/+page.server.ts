@@ -5,13 +5,45 @@ import * as schema from '$lib/server/db/schema';
 import { eq } from 'drizzle-orm';
 import { hash, verify } from '@node-rs/argon2';
 import { generateTotpSecret, verifyTotpToken } from '$lib/server/auth';
-import { requireTeacher, requireAdmin } from '$lib/server/auth/access';
+import { requireTeacher, requireAdmin, assertCourseOwned } from '$lib/server/auth/access';
 import { seedDatabase } from '$lib/server/db/seed';
 import { gradingTemplateRepository } from '$lib/server/repositories/grading-template.repository';
 import { settingsRepository } from '$lib/server/repositories/settings.repository';
 import { validateScale } from '$lib/services/grading';
 import { BgbbError, fetchBgbbClasses, getBgbbConfig, saveBgbbConfig } from '$lib/server/bgbb/client';
 import { getEntraConfig, saveEntraConfig } from '$lib/server/auth/entra';
+import { timetableRepository } from '$lib/server/repositories/timetable.repository';
+import { syncTimetable, type TimetableSyncOutcome } from '$lib/server/webuntis/timetable';
+import { validateIcsUrl, comboKey } from '$lib/services/timetable';
+
+function loadTimetableSection(userId: string) {
+	const state = timetableRepository.getSyncState(userId);
+	const links = new Map(timetableRepository.getLinks(userId).map((l) => [l.courseId, comboKey(l)]));
+	const courses = (
+		sqlite
+			.prepare(
+				`SELECT c.id, c.subject, cl.name as className
+				 FROM courses c
+				 JOIN classes cl ON cl.id = c.class_id
+				 WHERE c.teacher_id = ?
+				   AND c.school_year_id = COALESCE(
+					 (SELECT id FROM school_years WHERE is_current = 1 LIMIT 1),
+					 (SELECT id FROM school_years ORDER BY start_date DESC LIMIT 1)
+				   )
+				 ORDER BY cl.name, c.subject`
+			)
+			.all(userId) as Array<{ id: string; subject: string; className: string }>
+	).map((c) => ({ ...c, link: links.get(c.id) ?? '' }));
+	const combos = timetableRepository.getCombos(userId).map((c) => ({ ...c, key: comboKey(c) }));
+	return { ...state, courses, combos };
+}
+
+function describeSync(outcome: TimetableSyncOutcome): string {
+	let msg = `Stundenplan abgeglichen: ${outcome.eventCount} Termine`;
+	if (outcome.cancelledCount > 0) msg += `, ${outcome.cancelledCount} entfallen`;
+	if (outcome.linkedCourses > 0) msg += `, ${outcome.linkedCourses} Kurs(e) automatisch zugeordnet`;
+	return msg + '.';
+}
 
 export const load: PageServerLoad = async ({ locals }) => {
 	const user = requireTeacher(locals);
@@ -45,6 +77,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 		emailSummaryEnabled: settings.emailSummaryEnabled,
 		pushSubscriptionsCount: subCount,
 		gradingTemplates,
+		timetable: loadTimetableSection(user.id),
 		bgbb: {
 			apiUrl: bgbb.apiUrl,
 			apiKeySet: Boolean(bgbb.apiKey),
@@ -80,6 +113,67 @@ export const actions: Actions = {
 		);
 
 		return { success: true, message: 'Einstellungen gespeichert!' };
+	},
+
+	saveTimetableUrl: async ({ request, locals }) => {
+		const user = requireTeacher(locals);
+		const form = await request.formData();
+		const raw = form.get('icsUrl')?.toString().trim() || '';
+		if (!raw) {
+			return fail(400, { timetableError: 'Bitte den Kalender-Link aus WebUntis einfügen.' });
+		}
+		const check = validateIcsUrl(raw);
+		if (!check.ok) return fail(400, { timetableError: check.error });
+
+		timetableRepository.setIcsUrl(user.id, check.url);
+		const outcome = await syncTimetable(user.id);
+		if (!outcome.ok) {
+			return fail(502, { timetableError: `Link gespeichert, aber Abgleich fehlgeschlagen: ${outcome.error}` });
+		}
+		return { success: true, timetableMessage: describeSync(outcome) };
+	},
+
+	syncTimetableNow: async ({ locals }) => {
+		const user = requireTeacher(locals);
+		const outcome = await syncTimetable(user.id);
+		if (!outcome.ok) return fail(502, { timetableError: outcome.error });
+		return { success: true, timetableMessage: describeSync(outcome) };
+	},
+
+	removeTimetable: async ({ locals }) => {
+		const user = requireTeacher(locals);
+		timetableRepository.disconnect(user.id);
+		return { success: true, timetableMessage: 'WebUntis-Stundenplan entfernt.' };
+	},
+
+	saveTimetableLinks: async ({ request, locals }) => {
+		const user = requireTeacher(locals);
+		const form = await request.formData();
+		const combos = new Map(timetableRepository.getCombos(user.id).map((c) => [comboKey(c), c]));
+		const chosen = new Map<string, string>();
+
+		for (const [name, value] of form.entries()) {
+			if (!name.startsWith('link_')) continue;
+			const courseId = name.slice(5);
+			assertCourseOwned(courseId, user.id);
+			const key = value.toString();
+			if (key && !combos.has(key)) return fail(400, { timetableError: 'Unbekannte Stundenplan-Zuordnung.' });
+			chosen.set(courseId, key);
+		}
+
+		const used = new Set<string>();
+		for (const key of chosen.values()) {
+			if (!key) continue;
+			if (used.has(key)) {
+				return fail(400, { timetableError: 'Jede Stundenplan-Zeile kann nur einem Kurs zugeordnet werden.' });
+			}
+			used.add(key);
+		}
+
+		for (const [courseId, key] of chosen) {
+			timetableRepository.setLink(user.id, courseId, key ? combos.get(key)! : null);
+		}
+		return { success: true, timetableMessage: 'Kurs-Zuordnung gespeichert.' };
 	},
 
 	updateBgbbSettings: async ({ request, locals }) => {

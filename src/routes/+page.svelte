@@ -26,6 +26,14 @@
 			deadlines: Array<any>;
 			isNearNotenschluss: boolean;
 			openEarlyWarningsCount: number;
+			upcomingExams?: Array<{
+				courseId: string;
+				courseLabel: string;
+				date: string;
+				startTime: string | null;
+				title: string;
+				created: boolean;
+			}>;
 		};
 	}
 
@@ -430,6 +438,32 @@
 			</div>
 		{/if}
 	</section>
+
+	<!-- Section: Prüfungen laut WebUntis (nächste 14 Tage) -->
+	{#if data.upcomingExams && data.upcomingExams.length > 0}
+		<div class="p-5 bg-slate-900 border border-slate-800 rounded-2xl shadow-sm space-y-3">
+			<h2 class="text-base font-bold text-white">Prüfungen in den nächsten 14 Tagen (WebUntis)</h2>
+			<div class="divide-y divide-slate-800">
+				{#each data.upcomingExams as ex (ex.courseId + ex.date + ex.title)}
+					<div class="flex items-center justify-between gap-3 py-2 text-sm">
+						<div>
+							<span class="font-mono text-xs text-slate-400 mr-2">
+								{new Date(`${ex.date}T12:00:00`).toLocaleDateString('de-AT', { weekday: 'short', day: '2-digit', month: '2-digit' })}{ex.startTime ? ` ${ex.startTime}` : ''}
+							</span>
+							<span class="text-white font-semibold">{ex.courseLabel}</span>
+							<span class="text-slate-400">– {ex.title}</span>
+						</div>
+						<a
+							href="/kurse/{ex.courseId}?tab=tests"
+							class="text-xs whitespace-nowrap {ex.created ? 'text-emerald-400' : 'text-amber-300 hover:underline'}"
+						>
+							{ex.created ? 'angelegt' : 'noch anlegen'}
+						</a>
+					</div>
+				{/each}
+			</div>
+		</div>
+	{/if}
 
 	<!-- Section 3: Upcoming Deadlines & School Calendar -->
 	<section class="space-y-4">

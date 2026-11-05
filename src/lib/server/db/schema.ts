@@ -405,3 +405,37 @@ export const lessonStudentNotesRelations = relations(lessonStudentNotes, ({ one 
 		references: [students.id]
 	})
 }));
+
+// --- WebUntis-Stundenplan (ICS-Abo je Lehrkraft) ---
+export const timetableEvents = sqliteTable('timetable_events', {
+	id: text('id').primaryKey(),
+	userId: text('user_id')
+		.notNull()
+		.references(() => users.id, { onDelete: 'cascade' }),
+	uid: text('uid').notNull(), // UID aus WebUntis: "<Unterrichts-ID>-<Stunden-ID>"
+	date: text('date').notNull(), // YYYY-MM-DD (Wiener Ortszeit)
+	startTime: text('start_time'), // HH:MM
+	endTime: text('end_time'), // HH:MM
+	summary: text('summary').notNull(),
+	location: text('location'),
+	kind: text('kind').notNull(), // 'lesson' | 'exam' | 'other'
+	classCode: text('class_code'), // klein geschrieben, z.B. "7b"
+	subjectCode: text('subject_code'), // groß geschrieben, z.B. "PH"
+	examType: text('exam_type'), // 'schularbeit' | 'test' | 'wiederholung' | null
+	examTitle: text('exam_title'),
+	status: text('status').notNull().default('scheduled'), // 'scheduled' | 'cancelled'
+	examDismissed: integer('exam_dismissed', { mode: 'boolean' }).notNull().default(false),
+	firstSeen: integer('first_seen').notNull(),
+	lastSeen: integer('last_seen').notNull()
+});
+
+export const timetableCourseLinks = sqliteTable('timetable_course_links', {
+	courseId: text('course_id')
+		.primaryKey()
+		.references(() => courses.id, { onDelete: 'cascade' }),
+	userId: text('user_id')
+		.notNull()
+		.references(() => users.id, { onDelete: 'cascade' }),
+	classCode: text('class_code').notNull(), // klein geschrieben
+	subjectCode: text('subject_code').notNull() // groß geschrieben
+});

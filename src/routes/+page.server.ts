@@ -11,6 +11,11 @@ import { calculateSnoozeDate, isDeadlineApproaching } from '$lib/services/remind
 import { getIsoWeekAndYear } from '$lib/services/dates';
 import { requireTeacher, guardCourseActions } from '$lib/server/auth/access';
 import crypto from 'node:crypto';
+import { timetableRepository } from '$lib/server/repositories/timetable.repository';
+import { syncTimetableIfStale } from '$lib/server/webuntis/timetable';
+import { toVienna } from '$lib/services/ical';
+import { addDays } from '$lib/services/dates';
+import { groupExams } from '$lib/services/timetable';
 
 export const load: PageServerLoad = async ({ parent, locals }) => {
 	const user = requireTeacher(locals);
@@ -100,7 +105,45 @@ export const load: PageServerLoad = async ({ parent, locals }) => {
 			.get(user.id) as any
 	).count;
 
+	// WebUntis: Prüfungen der nächsten 14 Tage in eigenen Kursen
+	syncTimetableIfStale(user.id);
+	const today = toVienna(new Date()).date;
+	const courseById = new Map(courses.map((c) => [c.id, c]));
+	const linkedEvents = timetableRepository
+		.getLinkedEvents(user.id, today, addDays(today, 14))
+		.filter((e) => courseById.has(e.courseId));
+	const assessmentKeys = new Set(
+		(
+			sqlite
+				.prepare(
+					`SELECT a.course_id as courseId, a.date FROM assessments a
+					 JOIN courses c ON c.id = a.course_id
+					 WHERE c.teacher_id = ? AND a.date >= ?`
+				)
+				.all(user.id, today) as Array<{ courseId: string; date: string }>
+		).map((a) => `${a.courseId}|${a.date}`)
+	);
+	const upcomingExams = [...new Set(linkedEvents.map((e) => e.courseId))]
+		.flatMap((courseId) =>
+			groupExams(linkedEvents.filter((e) => e.courseId === courseId)).map((g) => {
+				const c = courseById.get(courseId)!;
+				return {
+					courseId,
+					courseLabel: `${c.className} ${c.subject}`,
+					date: g.date,
+					startTime: g.startTime,
+					title: g.title,
+					examType: g.examType,
+					created: assessmentKeys.has(`${courseId}|${g.date}`),
+					dismissed: g.dismissed
+				};
+			})
+		)
+		.filter((x) => x.created || !x.dismissed)
+		.sort((a, b) => `${a.date}${a.startTime}`.localeCompare(`${b.date}${b.startTime}`));
+
 	return {
+		upcomingExams,
 		overdueSummary,
 		assessmentEarlyWarningReminders,
 		missingParticipationByCourse,

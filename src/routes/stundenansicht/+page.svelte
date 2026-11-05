@@ -25,6 +25,20 @@
 			studentsWithDetails: Array<any>;
 			activeLesson: any;
 			recentLessons: Array<any>;
+			scheduleToday?: Array<{
+				courseId: string;
+				startTime: string | null;
+				endTime: string | null;
+				location: string | null;
+				examTitle: string | null;
+			}>;
+			currentLesson?: {
+				courseId: string;
+				startTime: string | null;
+				endTime: string | null;
+				location: string | null;
+				examTitle: string | null;
+			} | null;
 		};
 	}
 
@@ -83,6 +97,11 @@
 			>
 				<BookOpen class="w-4 h-4" />
 				<span>{c.className} • {c.subject}</span>
+				{#each (data.scheduleToday || []).filter((l) => l.courseId === c.id) as l}
+					<span class="px-1.5 py-0.5 rounded-md text-[10px] font-mono {data.selectedCourse?.id === c.id ? 'bg-blue-500/40' : 'bg-slate-800 text-slate-400'}">
+						{l.startTime}
+					</span>
+				{/each}
 			</a>
 		{/each}
 	</div>
@@ -106,6 +125,13 @@
 				<p class="text-xs text-slate-400 mt-0.5">
 					{data.studentsWithDetails.length} Schüler | Schnelleingabe für Mitarbeit, HÜ und Notizen
 				</p>
+				{#if data.currentLesson}
+					<p class="text-xs text-blue-300 mt-1">
+						Laut Stundenplan heute {data.currentLesson.startTime}–{data.currentLesson.endTime}{data.currentLesson.location
+							? ` · Raum ${data.currentLesson.location}`
+							: ''}{data.currentLesson.examTitle ? ` · ${data.currentLesson.examTitle}` : ''}
+					</p>
+				{/if}
 			</div>
 
 			<!-- Filter Pills -->

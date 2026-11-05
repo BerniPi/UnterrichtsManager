@@ -1,9 +1,13 @@
 import type { Handle } from '@sveltejs/kit/hooks';
 import { validateSessionToken, SESSION_COOKIE_NAME } from '$lib/server/auth';
 import { seedDatabase } from '$lib/server/db/seed';
+import { startTimetableScheduler } from '$lib/server/webuntis/timetable';
 
 // Ensure database has default admin & seed data on startup
 seedDatabase().catch(console.error);
+
+// WebUntis-Stundenpläne mindestens täglich abgleichen
+startTimetableScheduler();
 
 export const handle: Handle = async ({ event, resolve }) => {
 	const token = event.cookies.get(SESSION_COOKIE_NAME);

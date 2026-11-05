@@ -20,6 +20,8 @@
 	import CourseHomeworkTab from '$lib/components/course/CourseHomeworkTab.svelte';
 	import CourseEarlyWarningsTab from '$lib/components/course/CourseEarlyWarningsTab.svelte';
 	import CourseWeightsTab from '$lib/components/course/CourseWeightsTab.svelte';
+	import TimetableLessonsPanel from '$lib/components/course/TimetableLessonsPanel.svelte';
+	import TimetableExamSuggestions from '$lib/components/course/TimetableExamSuggestions.svelte';
 
 	interface Props {
 		data: {
@@ -33,6 +35,7 @@
 			homeworks: Array<any>;
 			earlyWarnings: Array<any>;
 			gradingTemplates?: Array<any>;
+			timetable: any;
 			defaultReturnDays?: number;
 			initialStudentId?: string | null;
 		};
@@ -164,6 +167,15 @@
 				students={data.evaluatedStudents}
 			/>
 		{:else if data.activeTab === 'tests'}
+			{#if data.timetable.examSuggestions.length > 0}
+			<div class="mb-4">
+				<TimetableExamSuggestions
+					courseId={data.course.id}
+					suggestions={data.timetable.examSuggestions}
+					gradingTemplates={data.gradingTemplates || []}
+				/>
+			</div>
+			{/if}
 			<CourseTestsTab
 				course={data.course}
 				assessments={data.assessments}
@@ -174,6 +186,9 @@
 		{:else if data.activeTab === 'beobachtungen'}
 			<CourseObservationsTab course={data.course} observations={data.observations} />
 		{:else if data.activeTab === 'stunden'}
+			<div class="mb-4">
+				<TimetableLessonsPanel timetable={data.timetable} />
+			</div>
 			<CourseLessonsTab course={data.course} lessons={data.lessons || []} />
 		{:else if data.activeTab === 'fruehwarnungen'}
 			<CourseEarlyWarningsTab

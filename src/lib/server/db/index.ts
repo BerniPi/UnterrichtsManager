@@ -268,6 +268,40 @@ export function initDb() {
 			created_at INTEGER NOT NULL
 		);
 
+		CREATE TABLE IF NOT EXISTS timetable_events (
+			id TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			uid TEXT NOT NULL,
+			date TEXT NOT NULL,
+			start_time TEXT,
+			end_time TEXT,
+			summary TEXT NOT NULL,
+			location TEXT,
+			kind TEXT NOT NULL,
+			class_code TEXT,
+			subject_code TEXT,
+			exam_type TEXT,
+			exam_title TEXT,
+			status TEXT NOT NULL DEFAULT 'scheduled',
+			exam_dismissed INTEGER NOT NULL DEFAULT 0,
+			first_seen INTEGER NOT NULL,
+			last_seen INTEGER NOT NULL
+		);
+
+		CREATE TABLE IF NOT EXISTS timetable_course_links (
+			course_id TEXT PRIMARY KEY REFERENCES courses(id) ON DELETE CASCADE,
+			user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			class_code TEXT NOT NULL,
+			subject_code TEXT NOT NULL
+		);
+
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_timetable_events_uid
+		ON timetable_events(user_id, uid);
+		CREATE INDEX IF NOT EXISTS idx_timetable_events_combo
+		ON timetable_events(user_id, class_code, subject_code, date);
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_timetable_course_links_combo
+		ON timetable_course_links(user_id, class_code, subject_code);
+
 		DROP INDEX IF EXISTS idx_grading_scale_templates_default;
 
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_course_final_grades_unique 

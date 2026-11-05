@@ -15,6 +15,11 @@ import { db, sqlite } from '$lib/server/db';
 import * as schema from '$lib/server/db/schema';
 import { eq } from 'drizzle-orm';
 import crypto from 'node:crypto';
+import { timetableRepository } from '$lib/server/repositories/timetable.repository';
+import { syncTimetableIfStale } from '$lib/server/webuntis/timetable';
+import { toVienna } from '$lib/services/ical';
+import { addDays } from '$lib/services/dates';
+import { computeLessonStats, groupExams } from '$lib/services/timetable';
 
 export const load: PageServerLoad = async ({ params, url, locals }) => {
 	const user = requireTeacher(locals);
@@ -67,6 +72,27 @@ export const load: PageServerLoad = async ({ params, url, locals }) => {
 	// 7. Grading Scale Templates
 	const gradingTemplates = gradingTemplateRepository.getAll(user.id);
 
+	// 8. WebUntis-Stundenplan: gehaltene Stunden, Lücken, Prüfungsvorschläge
+	syncTimetableIfStale(user.id);
+	const timetableState = timetableRepository.getSyncState(user.id);
+	const isLinked = timetableRepository.getLinks(user.id).some((l) => l.courseId === courseId);
+	const timetableEvents = isLinked ? timetableRepository.getCourseEvents(courseId, user.id) : [];
+	const nowVienna = toVienna(new Date());
+	const lessonDates = new Set(lessons.map((l) => l.date));
+	const assessmentDates = new Set(assessments.map((a: { date: string }) => a.date));
+	const oldestSuggestion = addDays(nowVienna.date, -60);
+	const timetable = {
+		configured: timetableState.configured,
+		linked: isLinked,
+		stats: isLinked ? computeLessonStats(timetableEvents, lessonDates, nowVienna) : null,
+		examSuggestions: groupExams(timetableEvents).filter(
+			(g) => !g.dismissed && !assessmentDates.has(g.date) && g.date >= oldestSuggestion
+		),
+		upcomingCancelled: timetableEvents
+			.filter((e) => e.status === 'cancelled' && e.kind !== 'other' && e.date >= nowVienna.date)
+			.map((e) => ({ date: e.date, startTime: e.startTime, endTime: e.endTime }))
+	};
+
 	return {
 		course,
 		activeTab,
@@ -78,6 +104,7 @@ export const load: PageServerLoad = async ({ params, url, locals }) => {
 		homeworks,
 		earlyWarnings,
 		gradingTemplates,
+		timetable,
 		defaultReturnDays: settings.defaultReturnDays,
 		initialStudentId: url.searchParams.get('studentId') || null
 	};
@@ -370,6 +397,14 @@ export const actions: Actions = guardCourseActions(
 		if (!observationId) return fail(400, { success: false, message: 'Beobachtungs-ID fehlt' });
 
 		observationRepository.delete(observationId);
+		return { success: true };
+	},
+
+	dismissTimetableExam: async ({ request, locals }) => {
+		const form = await request.formData();
+		const uids = (form.get('examUids')?.toString() || '').split(',').map((u) => u.trim()).filter(Boolean);
+		if (uids.length === 0) return fail(400, { success: false, message: 'Prüfung fehlt' });
+		timetableRepository.dismissExam(locals.user!.id, uids);
 		return { success: true };
 	},
 
