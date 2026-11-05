@@ -14,11 +14,17 @@ export interface CourseWithDetails {
 	weightParticipation: number;
 	weightObservations: number;
 	weightHomework: number;
+	teacherId: string | null;
 	studentCount: number;
 }
 
 export const courseRepository = {
-	getBySchoolYear(schoolYearId: string): CourseWithDetails[] {
+	getBySchoolYear(schoolYearId: string, teacherId?: string): CourseWithDetails[] {
+		const whereClause = teacherId
+			? 'WHERE c.school_year_id = ? AND c.teacher_id = ?'
+			: 'WHERE c.school_year_id = ?';
+		const args = teacherId ? [schoolYearId, teacherId] : [schoolYearId];
+
 		return sqlite
 			.prepare(
 				`
@@ -33,19 +39,23 @@ export const courseRepository = {
 				c.weight_participation as weightParticipation,
 				c.weight_observations as weightObservations,
 				c.weight_homework as weightHomework,
+				c.teacher_id as teacherId,
 				COUNT(DISTINCT s.id) as studentCount
 			FROM courses c
 			JOIN classes cl ON c.class_id = cl.id
 			LEFT JOIN students s ON s.class_id = cl.id AND s.status = 'active'
-			WHERE c.school_year_id = ?
+			${whereClause}
 			GROUP BY c.id
 			ORDER BY cl.name ASC, c.subject ASC
 		`
 			)
-			.all(schoolYearId) as CourseWithDetails[];
+			.all(...args) as CourseWithDetails[];
 	},
 
-	getAll(): CourseWithDetails[] {
+	getAll(teacherId?: string): CourseWithDetails[] {
+		const whereClause = teacherId ? 'WHERE c.teacher_id = ?' : '';
+		const args = teacherId ? [teacherId] : [];
+
 		return sqlite
 			.prepare(
 				`
@@ -60,18 +70,23 @@ export const courseRepository = {
 				c.weight_participation as weightParticipation,
 				c.weight_observations as weightObservations,
 				c.weight_homework as weightHomework,
+				c.teacher_id as teacherId,
 				COUNT(DISTINCT s.id) as studentCount
 			FROM courses c
 			JOIN classes cl ON c.class_id = cl.id
 			LEFT JOIN students s ON s.class_id = cl.id AND s.status = 'active'
+			${whereClause}
 			GROUP BY c.id
 			ORDER BY cl.name ASC, c.subject ASC
 		`
 			)
-			.all() as CourseWithDetails[];
+			.all(...args) as CourseWithDetails[];
 	},
 
-	getById(id: string): CourseWithDetails | null {
+	getById(id: string, teacherId?: string): CourseWithDetails | null {
+		const whereClause = teacherId ? 'WHERE c.id = ? AND c.teacher_id = ?' : 'WHERE c.id = ?';
+		const args = teacherId ? [id, teacherId] : [id];
+
 		const row = sqlite
 			.prepare(
 				`
@@ -86,15 +101,16 @@ export const courseRepository = {
 				c.weight_participation as weightParticipation,
 				c.weight_observations as weightObservations,
 				c.weight_homework as weightHomework,
+				c.teacher_id as teacherId,
 				COUNT(DISTINCT s.id) as studentCount
 			FROM courses c
 			JOIN classes cl ON c.class_id = cl.id
 			LEFT JOIN students s ON s.class_id = cl.id AND s.status = 'active'
-			WHERE c.id = ?
+			${whereClause}
 			GROUP BY c.id
 		`
 			)
-			.get(id) as CourseWithDetails | undefined;
+			.get(...args) as CourseWithDetails | undefined;
 
 		return row || null;
 	},
@@ -103,6 +119,7 @@ export const courseRepository = {
 		classId: string;
 		schoolYearId: string;
 		subject: string;
+		teacherId: string;
 		weightSchularbeiten?: number;
 		weightTests?: number;
 		weightParticipation?: number;
@@ -120,7 +137,8 @@ export const courseRepository = {
 				weightTests: data.weightTests ?? 20,
 				weightParticipation: data.weightParticipation ?? 25,
 				weightObservations: data.weightObservations ?? 10,
-				weightHomework: data.weightHomework ?? 5
+				weightHomework: data.weightHomework ?? 5,
+				teacherId: data.teacherId
 			})
 			.run();
 		return id;
@@ -139,6 +157,13 @@ export const courseRepository = {
 		db.update(schema.courses)
 			.set(weights)
 			.where(eq(schema.courses.id, id))
+			.run();
+	},
+
+	transferCourse(courseId: string, newTeacherId: string): void {
+		db.update(schema.courses)
+			.set({ teacherId: newTeacherId })
+			.where(eq(schema.courses.id, courseId))
 			.run();
 	}
 };

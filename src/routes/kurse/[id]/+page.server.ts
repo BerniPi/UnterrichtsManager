@@ -5,28 +5,30 @@ import { assessmentRepository } from '$lib/server/repositories/assessment.reposi
 import { observationRepository } from '$lib/server/repositories/observation.repository';
 import { earlyWarningRepository } from '$lib/server/repositories/earlywarning.repository';
 import { homeworkRepository } from '$lib/server/repositories/homework.repository';
-import { participationRepository } from '$lib/server/repositories/participation.repository';
 import { gradingTemplateRepository } from '$lib/server/repositories/grading-template.repository';
 import { settingsRepository } from '$lib/server/repositories/settings.repository';
 import { lessonRepository } from '$lib/server/repositories/lesson.repository';
 import { evaluateCourseStudents } from '$lib/services/student-evaluator';
-import { generateWebUntisExcel, generateWebUntisCsv } from '$lib/services/export/webuntis';
 import { validateScale, type GradingThreshold } from '$lib/services/grading';
+import { requireTeacher, assertCourseOwned, guardCourseActions } from '$lib/server/auth/access';
 import { db, sqlite } from '$lib/server/db';
 import * as schema from '$lib/server/db/schema';
-import { eq, and } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import crypto from 'node:crypto';
 
-export const load: PageServerLoad = async ({ params, url }) => {
+export const load: PageServerLoad = async ({ params, url, locals }) => {
+	const user = requireTeacher(locals);
 	const courseId = params.id;
-	const course = courseRepository.getById(courseId);
+	assertCourseOwned(courseId, user.id);
+
+	const course = courseRepository.getById(courseId, user.id);
 
 	if (!course) {
 		throw error(404, 'Kurs nicht gefunden');
 	}
 
 	const activeTab = url.searchParams.get('tab') || 'noten';
-	const settings = settingsRepository.getAll();
+	const settings = settingsRepository.getAll(user.id);
 
 	const weights = {
 		weightSchularbeiten: course.weightSchularbeiten,
@@ -44,7 +46,11 @@ export const load: PageServerLoad = async ({ params, url }) => {
 
 	// Selected assessment detail if query param exists
 	const selectedAssessmentId = url.searchParams.get('assessmentId') || assessments[0]?.id;
-	const selectedAssessment = selectedAssessmentId ? assessmentRepository.getById(selectedAssessmentId) : null;
+	const candidateAssessment = selectedAssessmentId
+		? assessmentRepository.getById(selectedAssessmentId)
+		: null;
+	const selectedAssessment =
+		candidateAssessment && candidateAssessment.courseId === courseId ? candidateAssessment : null;
 
 	// 3. Observations
 	const observations = observationRepository.getByCourse(courseId);
@@ -59,7 +65,7 @@ export const load: PageServerLoad = async ({ params, url }) => {
 	const earlyWarnings = earlyWarningRepository.getByCourse(courseId);
 
 	// 7. Grading Scale Templates
-	const gradingTemplates = gradingTemplateRepository.getAll();
+	const gradingTemplates = gradingTemplateRepository.getAll(user.id);
 
 	return {
 		course,
@@ -77,8 +83,9 @@ export const load: PageServerLoad = async ({ params, url }) => {
 	};
 };
 
-export const actions: Actions = {
-	saveFinalGrade: async ({ request, params }) => {
+export const actions: Actions = guardCourseActions(
+	{
+		saveFinalGrade: async ({ request, params }) => {
 		const form = await request.formData();
 		const studentId = form.get('studentId')?.toString();
 		const manualGradeRaw = form.get('manualGrade')?.toString();
@@ -140,13 +147,13 @@ export const actions: Actions = {
 		return { success: true };
 	},
 
-	createAssessment: async ({ request, params }) => {
+	createAssessment: async ({ request, params, locals }) => {
 		const form = await request.formData();
 		const title = form.get('title')?.toString().trim();
 		const type = form.get('type')?.toString();
 		const date = form.get('date')?.toString();
 		const maxPoints = parseFloat(form.get('maxPoints')?.toString() || '48');
-		const defaultReturnDays = settingsRepository.get('defaultReturnDays');
+		const defaultReturnDays = settingsRepository.get('defaultReturnDays', locals.user?.id);
 		const returnDays = parseInt(form.get('returnDays')?.toString() || String(defaultReturnDays), 10);
 		const note = form.get('note')?.toString().trim() || null;
 
@@ -173,7 +180,7 @@ export const actions: Actions = {
 			} catch (e) {}
 		}
 		if (!gradingScale && templateId) {
-			const tpl = gradingTemplateRepository.getById(templateId);
+			const tpl = gradingTemplateRepository.getById(templateId, locals.user?.id);
 			if (tpl) gradingScale = tpl.scale;
 		}
 
@@ -540,4 +547,6 @@ export const actions: Actions = {
 
 		return { success: true };
 	}
-};
+	},
+	{ courseIdParam: 'id' }
+);

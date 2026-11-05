@@ -14,7 +14,7 @@ import {
 
 export const load: PageServerLoad = async ({ locals }) => {
 	if (locals.user) {
-		throw redirect(303, '/');
+		throw redirect(303, locals.user.role === 'student' ? '/meine-noten' : '/');
 	}
 	return {};
 };
@@ -34,6 +34,10 @@ export const actions: Actions = {
 
 		if (!user) {
 			return fail(400, { message: 'Ungültige Anmeldedaten.' });
+		}
+
+		if (!user.isActive) {
+			return fail(403, { message: 'Dieses Benutzerkonto ist deaktiviert.' });
 		}
 
 		const validPassword = await verify(user.passwordHash, password);
@@ -62,7 +66,7 @@ export const actions: Actions = {
 			maxAge: 60 * 60 * 24 * 30 // 30 days
 		});
 
-		throw redirect(303, '/');
+		throw redirect(303, user.role === 'student' ? '/meine-noten' : '/');
 	},
 
 	logout: async ({ locals, cookies }) => {

@@ -2,12 +2,15 @@ import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import Database from 'better-sqlite3';
 import { sqlite, initDb } from '$lib/server/db';
+import { requireAdmin } from '$lib/server/auth/access';
 import fs from 'node:fs';
 import path from 'node:path';
 
 const MAX_BACKUP_SIZE = 50 * 1024 * 1024; // 50 MB
 
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async ({ request, locals }) => {
+	requireAdmin(locals);
+
 	const formData = await request.formData();
 	const file = formData.get('backupFile') as File | null;
 

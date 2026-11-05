@@ -27,6 +27,7 @@
 				inactive_student_count: number;
 			}>;
 			bgbbConfigured: boolean;
+			isAdmin?: boolean;
 		};
 		form?: any;
 	}
@@ -122,54 +123,56 @@
 			</p>
 		</div>
 
-		<div class="flex items-center space-x-3">
-			<button
-				type="button"
-				onclick={() => (showCreateModal = true)}
-				class="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white font-medium text-sm border border-slate-700 transition flex items-center space-x-2"
-			>
-				<Plus class="w-4 h-4" />
-				<span>Neue Klasse</span>
-			</button>
-
-			<form
-				action="?/bgbbLoadClasses"
-				method="POST"
-				use:enhance={bgbbEnhance((d) => {
-					bgbbClasses = d.bgbbClasses;
-					bgbbSelected = d.bgbbClasses.filter((c: any) => c.existsInNotenmanager).map((c: any) => c.klasse);
-					bgbbPreview = null;
-				})}
-				onsubmit={() => {
-					bgbbClasses = [];
-					bgbbPreview = null;
-					showBgbbModal = true;
-				}}
-			>
+		{#if data.isAdmin}
+			<div class="flex items-center space-x-3">
 				<button
-					type="submit"
-					disabled={!data.bgbbConfigured}
-					title={data.bgbbConfigured ? 'Schülerlisten aus BGBB Admin übernehmen' : 'BGBB Admin zuerst in den Einstellungen einrichten'}
-					class="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white font-medium text-sm border border-slate-700 transition flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+					type="button"
+					onclick={() => (showCreateModal = true)}
+					class="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white font-medium text-sm border border-slate-700 transition flex items-center space-x-2"
 				>
-					<RefreshCw class="w-4 h-4" />
-					<span>Aus BGBB Admin</span>
+					<Plus class="w-4 h-4" />
+					<span>Neue Klasse</span>
 				</button>
-			</form>
 
-			<button
-				type="button"
-				onclick={() => {
-					selectedClassId = data.classes[0]?.id || '';
-					step = 1;
-					showImportModal = true;
-				}}
-				class="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-sm shadow-md shadow-blue-500/20 active:scale-95 transition flex items-center space-x-2"
-			>
-				<UploadCloud class="w-4 h-4" />
-				<span>WebUntis Import</span>
-			</button>
-		</div>
+				<form
+					action="?/bgbbLoadClasses"
+					method="POST"
+					use:enhance={bgbbEnhance((d) => {
+						bgbbClasses = d.bgbbClasses;
+						bgbbSelected = d.bgbbClasses.filter((c: any) => c.existsInNotenmanager).map((c: any) => c.klasse);
+						bgbbPreview = null;
+					})}
+					onsubmit={() => {
+						bgbbClasses = [];
+						bgbbPreview = null;
+						showBgbbModal = true;
+					}}
+				>
+					<button
+						type="submit"
+						disabled={!data.bgbbConfigured}
+						title={data.bgbbConfigured ? 'Schülerlisten aus BGBB Admin übernehmen' : 'BGBB Admin zuerst in den Einstellungen einrichten'}
+						class="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white font-medium text-sm border border-slate-700 transition flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+					>
+						<RefreshCw class="w-4 h-4" />
+						<span>Aus BGBB Admin</span>
+					</button>
+				</form>
+
+				<button
+					type="button"
+					onclick={() => {
+						selectedClassId = data.classes[0]?.id || '';
+						step = 1;
+						showImportModal = true;
+					}}
+					class="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-sm shadow-md shadow-blue-500/20 active:scale-95 transition flex items-center space-x-2"
+				>
+					<UploadCloud class="w-4 h-4" />
+					<span>WebUntis Import</span>
+				</button>
+			</div>
+		{/if}
 	</div>
 
 	<!-- Success toast if imported -->

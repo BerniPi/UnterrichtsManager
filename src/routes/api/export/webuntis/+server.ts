@@ -4,8 +4,10 @@ import { courseRepository } from '$lib/server/repositories/course.repository';
 import { settingsRepository } from '$lib/server/repositories/settings.repository';
 import { evaluateCourseStudents } from '$lib/services/student-evaluator';
 import { generateWebUntisExcel, generateWebUntisCsv } from '$lib/services/export/webuntis';
+import { requireTeacher, assertCourseOwned } from '$lib/server/auth/access';
 
-export const GET: RequestHandler = async ({ url }) => {
+export const GET: RequestHandler = async ({ url, locals }) => {
+	const user = requireTeacher(locals);
 	const courseId = url.searchParams.get('courseId');
 	const format = url.searchParams.get('format') || 'xlsx';
 
@@ -13,7 +15,9 @@ export const GET: RequestHandler = async ({ url }) => {
 		throw error(400, 'courseId parameter erforderlich');
 	}
 
-	const course = courseRepository.getById(courseId);
+	assertCourseOwned(courseId, user.id);
+
+	const course = courseRepository.getById(courseId, user.id);
 	if (!course) {
 		throw error(404, 'Kurs nicht gefunden');
 	}
@@ -26,7 +30,7 @@ export const GET: RequestHandler = async ({ url }) => {
 		weightHomework: course.weightHomework
 	};
 
-	const threshold = settingsRepository.get('earlyWarningThreshold');
+	const threshold = settingsRepository.get('earlyWarningThreshold', user.id);
 	const evaluatedStudents = evaluateCourseStudents(courseId, weights, threshold);
 
 	const exportRows = evaluatedStudents.map((s) => ({

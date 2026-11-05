@@ -1,4 +1,4 @@
-import { db, sqlite, initDb } from './index';
+import { db, sqlite, initDb, seedTemplatesForUser } from './index';
 import * as schema from './schema';
 import { hash } from '@node-rs/argon2';
 import crypto from 'node:crypto';
@@ -7,20 +7,71 @@ import { DEFAULT_TEMPLATES } from '../../services/grading';
 export async function seedDatabase(force = false) {
 	initDb();
 
+	const adminPassword = process.env.ADMIN_PASSWORD || 'notenmanager123';
+	const isProduction = process.env.NODE_ENV === 'production';
+
 	const userCount = sqlite.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number };
 	if (userCount.count > 0 && !force) {
+		if (!isProduction) {
+			const hasLehrer2 = sqlite
+				.prepare("SELECT id FROM users WHERE username = 'lehrer2' LIMIT 1")
+				.get() as { id: string } | undefined;
+			if (!hasLehrer2) {
+				const passwordHash = await hash(adminPassword);
+				sqlite.transaction(() => {
+					const teacher2Id = crypto.randomUUID();
+					db.insert(schema.users)
+						.values({
+							id: teacher2Id,
+							username: 'lehrer2',
+							passwordHash,
+							totpEnabled: false,
+							createdAt: Date.now(),
+							role: 'teacher',
+							displayName: 'Prof. Mag. Anna Berger',
+							isActive: true
+						})
+						.run();
+					seedTemplatesForUser(teacher2Id);
+					db.insert(schema.userSettings)
+						.values([{ userId: teacher2Id, key: 'teacher_name', value: 'Prof. Mag. Anna Berger' }])
+						.onConflictDoNothing()
+						.run();
+
+					const class3B = sqlite
+						.prepare("SELECT id, school_year_id FROM classes WHERE name = '3B' LIMIT 1")
+						.get() as { id: string; school_year_id: string } | undefined;
+					if (class3B) {
+						db.insert(schema.courses)
+							.values({
+								id: crypto.randomUUID(),
+								classId: class3B.id,
+								schoolYearId: class3B.school_year_id,
+								subject: 'Biologie',
+								weightSchularbeiten: 0,
+								weightTests: 40,
+								weightParticipation: 35,
+								weightObservations: 15,
+								weightHomework: 10,
+								teacherId: teacher2Id
+							})
+							.run();
+					}
+				})();
+			}
+		}
 		return { message: 'Database already seeded' };
 	}
 
-	const adminPassword = process.env.ADMIN_PASSWORD || 'notenmanager123';
 	const passwordHash = await hash(adminPassword);
-	const isProduction = process.env.NODE_ENV === 'production';
 
 	sqlite.transaction(() => {
 		if (force) {
 			sqlite.exec(`
 				DELETE FROM reminder_logs;
 				DELETE FROM push_subscriptions;
+				DELETE FROM lesson_student_notes;
+				DELETE FROM lesson_entries;
 				DELETE FROM homework_statuses;
 				DELETE FROM homeworks;
 				DELETE FROM notes;
@@ -37,13 +88,14 @@ export async function seedDatabase(force = false) {
 				DELETE FROM classes;
 				DELETE FROM school_years;
 				DELETE FROM sessions;
+				DELETE FROM user_settings;
+				DELETE FROM grading_scale_templates;
 				DELETE FROM users;
 				DELETE FROM settings;
-				DELETE FROM grading_scale_templates;
 			`);
 		}
 
-		// 1. Create Teacher User
+		// 1. Create Admin Teacher User
 		const teacherId = crypto.randomUUID();
 		db.insert(schema.users)
 			.values({
@@ -51,7 +103,10 @@ export async function seedDatabase(force = false) {
 				username: 'lehrer',
 				passwordHash,
 				totpEnabled: false,
-				createdAt: Date.now()
+				createdAt: Date.now(),
+				role: 'admin',
+				displayName: 'Prof. Mag. Bernhard',
+				isActive: true
 			})
 			.run();
 
@@ -66,20 +121,13 @@ export async function seedDatabase(force = false) {
 			.onConflictDoNothing()
 			.run();
 
-		// Default Grading Scale Templates
-		for (const t of DEFAULT_TEMPLATES) {
-			db.insert(schema.gradingScaleTemplates)
-				.values({
-					id: t.id,
-					name: t.name,
-					description: t.description || null,
-					scaleJson: JSON.stringify(t.scale),
-					isDefault: t.isDefault,
-					createdAt: Date.now()
-				})
-				.onConflictDoNothing()
-				.run();
-		}
+		db.insert(schema.userSettings)
+			.values([{ userId: teacherId, key: 'teacher_name', value: 'Prof. Mag. Bernhard' }])
+			.onConflictDoNothing()
+			.run();
+
+		// Default Grading Scale Templates for primary teacher
+		seedTemplatesForUser(teacherId);
 
 		// 2. School Year 2026/27 (Austrian school calendar)
 		const syId = crypto.randomUUID();
@@ -185,7 +233,8 @@ export async function seedDatabase(force = false) {
 				weightTests: 20,
 				weightParticipation: 25,
 				weightObservations: 10,
-				weightHomework: 5
+				weightHomework: 5,
+				teacherId
 			},
 			{
 				id: course3BPhysId,
@@ -196,7 +245,8 @@ export async function seedDatabase(force = false) {
 				weightTests: 25,
 				weightParticipation: 30,
 				weightObservations: 5,
-				weightHomework: 5
+				weightHomework: 5,
+				teacherId
 			},
 			{
 				id: course7APhysId,
@@ -207,9 +257,47 @@ export async function seedDatabase(force = false) {
 				weightTests: 20,
 				weightParticipation: 25,
 				weightObservations: 10,
-				weightHomework: 5
+				weightHomework: 5,
+				teacherId
 			}
 		])
+		.run();
+
+	// 5b. Second Demo Teacher (lehrer2) with own course
+	const teacher2Id = crypto.randomUUID();
+	db.insert(schema.users)
+		.values({
+			id: teacher2Id,
+			username: 'lehrer2',
+			passwordHash,
+			totpEnabled: false,
+			createdAt: Date.now(),
+			role: 'teacher',
+			displayName: 'Prof. Mag. Anna Berger',
+			isActive: true
+		})
+		.run();
+
+	seedTemplatesForUser(teacher2Id);
+	db.insert(schema.userSettings)
+		.values([{ userId: teacher2Id, key: 'teacher_name', value: 'Prof. Mag. Anna Berger' }])
+		.onConflictDoNothing()
+		.run();
+
+	const course3BBioId = crypto.randomUUID();
+	db.insert(schema.courses)
+		.values({
+			id: course3BBioId,
+			classId: class3BId,
+			schoolYearId: syId,
+			subject: 'Biologie',
+			weightSchularbeiten: 0,
+			weightTests: 40,
+			weightParticipation: 35,
+			weightObservations: 15,
+			weightHomework: 10,
+			teacherId: teacher2Id
+		})
 		.run();
 
 	// 6. Participation entries for 3B Mathematik (Weeks 41, 42)
@@ -390,7 +478,8 @@ export async function seedDatabase(force = false) {
 				date: '2026-10-10',
 				category: 'elterngespraech',
 				title: 'Telefonat mit Mutter bezüglich Frühwarnung',
-				content: 'Mutter informiert über Schularbeitsnote und Förderunterricht am Mittwoch angeboten.'
+				content: 'Mutter informiert über Schularbeitsnote und Förderunterricht am Mittwoch angeboten.',
+				authorId: teacherId
 			},
 			{
 				id: crypto.randomUUID(),
@@ -399,7 +488,8 @@ export async function seedDatabase(force = false) {
 				date: '2026-09-25',
 				category: 'foerderung',
 				title: 'Mathe-Olympiade Einladung',
-				content: 'Sehr starke Leistungen, Unterlagen für die Vorausscheidung übergeben.'
+				content: 'Sehr starke Leistungen, Unterlagen für die Vorausscheidung übergeben.',
+				authorId: teacherId
 			}
 		])
 		.run();

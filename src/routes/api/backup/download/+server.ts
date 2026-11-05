@@ -1,9 +1,12 @@
 import type { RequestHandler } from './$types';
 import { sqlite } from '$lib/server/db';
+import { requireAdmin } from '$lib/server/auth/access';
 import fs from 'node:fs';
 import path from 'node:path';
 
-export const GET: RequestHandler = async () => {
+export const GET: RequestHandler = async ({ locals }) => {
+	requireAdmin(locals);
+
 	// Execute checkpoint so WAL is merged into main file
 	sqlite.pragma('wal_checkpoint(TRUNCATE)');
 

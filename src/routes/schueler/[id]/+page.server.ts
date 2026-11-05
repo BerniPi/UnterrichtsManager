@@ -4,15 +4,18 @@ import { studentRepository } from '$lib/server/repositories/student.repository';
 import { noteRepository } from '$lib/server/repositories/note.repository';
 import { earlyWarningRepository } from '$lib/server/repositories/earlywarning.repository';
 import { participationRepository } from '$lib/server/repositories/participation.repository';
-import { evaluateStudentInCourse } from '$lib/services/student-evaluator';
-import { sqlite, db } from '$lib/server/db';
-import * as schema from '$lib/server/db/schema';
-import { eq } from 'drizzle-orm';
-import crypto from 'node:crypto';
-
 import { lessonRepository } from '$lib/server/repositories/lesson.repository';
+import { evaluateStudentInCourse } from '$lib/services/student-evaluator';
+import {
+	requireTeacher,
+	requireAdmin,
+	assertCourseOwned,
+	verifyActionOwnership
+} from '$lib/server/auth/access';
+import { sqlite } from '$lib/server/db';
 
-export const load: PageServerLoad = async ({ params }) => {
+export const load: PageServerLoad = async ({ params, locals }) => {
+	const user = requireTeacher(locals);
 	const studentId = params.id;
 	const student = studentRepository.getById(studentId);
 
@@ -20,7 +23,7 @@ export const load: PageServerLoad = async ({ params }) => {
 		throw error(404, 'Schüler nicht gefunden');
 	}
 
-	// Courses of this student's class
+	// Only own courses of this student's class
 	const courses = sqlite
 		.prepare(
 			`
@@ -33,11 +36,11 @@ export const load: PageServerLoad = async ({ params }) => {
 			c.weight_observations as weightObservations,
 			c.weight_homework as weightHomework
 		FROM courses c
-		WHERE c.class_id = ?
+		WHERE c.class_id = ? AND c.teacher_id = ?
 		ORDER BY c.subject ASC
 	`
 		)
-		.all(student.classId) as Array<{
+		.all(student.classId, user.id) as Array<{
 		id: string;
 		subject: string;
 		weightSchularbeiten: number;
@@ -47,7 +50,7 @@ export const load: PageServerLoad = async ({ params }) => {
 		weightHomework: number;
 	}>;
 
-	// Evaluate student in each course
+	// Evaluate student in each owned course
 	const courseEvaluations = courses.map((c) => {
 		const evaluation = evaluateStudentInCourse(studentId, c.id, {
 			weightSchularbeiten: c.weightSchularbeiten,
@@ -120,17 +123,21 @@ export const load: PageServerLoad = async ({ params }) => {
 		};
 	});
 
-	// Notes
-	const notes = noteRepository.getByStudent(studentId);
+	// Own notes only
+	const notes = noteRepository.getByStudent(studentId, user.id);
 
-	// Early warnings
-	const earlyWarnings = earlyWarningRepository.getByStudent(studentId);
+	// Early warnings from own courses only
+	const earlyWarnings = earlyWarningRepository.getByStudent(studentId, user.id);
 
-	// Full participation history
-	const participationHistory = participationRepository.getHistoryForStudent(studentId);
+	// Full participation history from own courses only
+	const participationHistory = participationRepository.getHistoryForStudent(
+		studentId,
+		undefined,
+		user.id
+	);
 
-	// Stundeneintrag / Lesson notes history
-	const lessonNotes = lessonRepository.getStudentHistory(studentId);
+	// Lesson notes history from own courses only
+	const lessonNotes = lessonRepository.getStudentHistory(studentId, undefined, user.id);
 
 	return {
 		student,
@@ -138,18 +145,24 @@ export const load: PageServerLoad = async ({ params }) => {
 		notes,
 		earlyWarnings,
 		participationHistory,
-		lessonNotes
+		lessonNotes,
+		isAdmin: user.role === 'admin'
 	};
 };
 
 export const actions: Actions = {
-	addNote: async ({ request, params }) => {
+	addNote: async ({ request, params, locals }) => {
+		const user = requireTeacher(locals);
 		const form = await request.formData();
 		const courseId = form.get('courseId')?.toString() || null;
-		const category = form.get('category')?.toString() as any || 'allgemein';
+		const category = (form.get('category')?.toString() as any) || 'allgemein';
 		const title = form.get('title')?.toString().trim();
 		const content = form.get('content')?.toString().trim();
 		const date = form.get('date')?.toString() || new Date().toISOString().slice(0, 10);
+
+		if (courseId) {
+			assertCourseOwned(courseId, user.id);
+		}
 
 		if (!title || !content) {
 			return { success: false, message: 'Titel und Inhalt erforderlich' };
@@ -158,6 +171,7 @@ export const actions: Actions = {
 		noteRepository.create({
 			studentId: params.id,
 			courseId,
+			authorId: user.id,
 			date,
 			category,
 			title,
@@ -167,16 +181,19 @@ export const actions: Actions = {
 		return { success: true };
 	},
 
-	deleteNote: async ({ request }) => {
+	deleteNote: async ({ request, locals }) => {
+		const user = requireTeacher(locals);
 		const form = await request.formData();
+		verifyActionOwnership(form, user.id);
 		const noteId = form.get('noteId')?.toString();
 		if (noteId) {
-			noteRepository.delete(noteId);
+			noteRepository.delete(noteId, user.id);
 		}
 		return { success: true };
 	},
 
-	updateStudent: async ({ request, params }) => {
+	updateStudent: async ({ request, params, locals }) => {
+		requireAdmin(locals);
 		const form = await request.formData();
 		const firstName = form.get('firstName')?.toString().trim();
 		const lastName = form.get('lastName')?.toString().trim();

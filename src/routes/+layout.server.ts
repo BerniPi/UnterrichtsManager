@@ -3,14 +3,30 @@ import { db, sqlite } from '$lib/server/db';
 import * as schema from '$lib/server/db/schema';
 import { eq, desc } from 'drizzle-orm';
 import { getOverdueItems } from '$lib/server/reminders/dispatcher';
+import { todayVienna } from '$lib/services/dates';
 
 export const load: LayoutServerLoad = async ({ locals }) => {
 	if (!locals.user) {
 		return { user: null };
 	}
 
-	const schoolYearsList = db.select().from(schema.schoolYears).orderBy(desc(schema.schoolYears.startDate)).all();
+	const schoolYearsList = db
+		.select()
+		.from(schema.schoolYears)
+		.orderBy(desc(schema.schoolYears.startDate))
+		.all();
 	const currentSchoolYear = schoolYearsList.find((sy) => sy.isCurrent) || schoolYearsList[0];
+
+	if (locals.user.role === 'student') {
+		return {
+			user: locals.user,
+			currentSchoolYear,
+			schoolYearsList: [],
+			classesList: [],
+			coursesList: [],
+			totalOverdueCount: 0
+		};
+	}
 
 	let coursesList: Array<{
 		id: string;
@@ -42,14 +58,14 @@ export const load: LayoutServerLoad = async ({ locals }) => {
 			SELECT c.id, c.subject, cl.name as className, cl.id as classId, cl.name as class_name, cl.id as class_id
 			FROM courses c
 			JOIN classes cl ON c.class_id = cl.id
-			WHERE c.school_year_id = ?
+			WHERE c.school_year_id = ? AND c.teacher_id = ?
 			ORDER BY cl.name ASC, c.subject ASC
 		`
 			)
-			.all(currentSchoolYear.id) as any;
+			.all(currentSchoolYear.id, locals.user.id) as any;
 	}
 
-	const overdueSummary = getOverdueItems();
+	const overdueSummary = getOverdueItems(todayVienna(), locals.user.id);
 
 	return {
 		user: locals.user,

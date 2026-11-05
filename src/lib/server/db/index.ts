@@ -33,7 +33,11 @@ export function initDb() {
 			password_hash TEXT NOT NULL,
 			totp_secret TEXT,
 			totp_enabled INTEGER NOT NULL DEFAULT 0,
-			created_at INTEGER NOT NULL
+			created_at INTEGER NOT NULL,
+			role TEXT NOT NULL DEFAULT 'teacher',
+			display_name TEXT,
+			is_active INTEGER NOT NULL DEFAULT 1,
+			student_id TEXT REFERENCES students(id) ON DELETE SET NULL
 		);
 
 		CREATE TABLE IF NOT EXISTS sessions (
@@ -84,7 +88,8 @@ export function initDb() {
 			weight_tests REAL NOT NULL DEFAULT 20,
 			weight_participation REAL NOT NULL DEFAULT 25,
 			weight_observations REAL NOT NULL DEFAULT 10,
-			weight_homework REAL NOT NULL DEFAULT 5
+			weight_homework REAL NOT NULL DEFAULT 5,
+			teacher_id TEXT REFERENCES users(id) ON DELETE CASCADE
 		);
 
 		CREATE TABLE IF NOT EXISTS participation_entries (
@@ -180,7 +185,8 @@ export function initDb() {
 			p256dh TEXT NOT NULL,
 			auth TEXT NOT NULL,
 			created_at INTEGER NOT NULL,
-			user_agent TEXT
+			user_agent TEXT,
+			user_id TEXT REFERENCES users(id) ON DELETE CASCADE
 		);
 
 		CREATE TABLE IF NOT EXISTS homeworks (
@@ -206,7 +212,8 @@ export function initDb() {
 			date TEXT NOT NULL,
 			category TEXT NOT NULL,
 			title TEXT NOT NULL,
-			content TEXT NOT NULL
+			content TEXT NOT NULL,
+			author_id TEXT REFERENCES users(id) ON DELETE CASCADE
 		);
 
 		CREATE TABLE IF NOT EXISTS course_final_grades (
@@ -224,13 +231,21 @@ export function initDb() {
 			value TEXT NOT NULL
 		);
 
+		CREATE TABLE IF NOT EXISTS user_settings (
+			user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			key TEXT NOT NULL,
+			value TEXT NOT NULL,
+			PRIMARY KEY (user_id, key)
+		);
+
 		CREATE TABLE IF NOT EXISTS grading_scale_templates (
 			id TEXT PRIMARY KEY,
 			name TEXT NOT NULL,
 			description TEXT,
 			scale_json TEXT NOT NULL,
 			is_default INTEGER NOT NULL DEFAULT 0,
-			created_at INTEGER NOT NULL
+			created_at INTEGER NOT NULL,
+			user_id TEXT REFERENCES users(id) ON DELETE CASCADE
 		);
 
 		CREATE TABLE IF NOT EXISTS lesson_entries (
@@ -250,8 +265,7 @@ export function initDb() {
 			created_at INTEGER NOT NULL
 		);
 
-		CREATE UNIQUE INDEX IF NOT EXISTS idx_grading_scale_templates_default 
-		ON grading_scale_templates(is_default) WHERE is_default = 1;
+		DROP INDEX IF EXISTS idx_grading_scale_templates_default;
 
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_course_final_grades_unique 
 		ON course_final_grades(course_id, student_id, semester);
@@ -298,33 +312,103 @@ export function initDb() {
 		sqlite.exec(`ALTER TABLE students ADD COLUMN schkz TEXT;`);
 	} catch (e) {}
 
-	sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_students_schkz ON students(schkz);`);
-
-	// Auto-seed default templates if none exist
 	try {
-		const countRow = sqlite
-			.prepare('SELECT COUNT(*) as count FROM grading_scale_templates')
-			.get() as { count: number } | undefined;
+		sqlite.exec(`ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'teacher';`);
+	} catch (e) {}
 
-		if (!countRow || countRow.count === 0) {
-			const insertStmt = sqlite.prepare(`
-				INSERT OR IGNORE INTO grading_scale_templates (id, name, description, scale_json, is_default, created_at)
-				VALUES (?, ?, ?, ?, ?, ?)
-			`);
+	try {
+		sqlite.exec(`ALTER TABLE users ADD COLUMN display_name TEXT;`);
+	} catch (e) {}
 
-			for (const t of DEFAULT_TEMPLATES) {
-				insertStmt.run(
-					t.id,
-					t.name,
-					t.description || null,
-					JSON.stringify(t.scale),
-					t.isDefault ? 1 : 0,
-					Date.now()
-				);
+	try {
+		sqlite.exec(`ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1;`);
+	} catch (e) {}
+
+	try {
+		sqlite.exec(`ALTER TABLE users ADD COLUMN student_id TEXT REFERENCES students(id) ON DELETE SET NULL;`);
+	} catch (e) {}
+
+	try {
+		sqlite.exec(`ALTER TABLE courses ADD COLUMN teacher_id TEXT REFERENCES users(id) ON DELETE CASCADE;`);
+	} catch (e) {}
+
+	try {
+		sqlite.exec(`ALTER TABLE notes ADD COLUMN author_id TEXT REFERENCES users(id) ON DELETE CASCADE;`);
+	} catch (e) {}
+
+	try {
+		sqlite.exec(`ALTER TABLE push_subscriptions ADD COLUMN user_id TEXT REFERENCES users(id) ON DELETE CASCADE;`);
+	} catch (e) {}
+
+	try {
+		sqlite.exec(`ALTER TABLE grading_scale_templates ADD COLUMN user_id TEXT REFERENCES users(id) ON DELETE CASCADE;`);
+	} catch (e) {}
+
+	sqlite.exec(`
+		CREATE INDEX IF NOT EXISTS idx_students_schkz ON students(schkz);
+		CREATE INDEX IF NOT EXISTS idx_courses_teacher ON courses(teacher_id);
+		CREATE INDEX IF NOT EXISTS idx_notes_author ON notes(author_id);
+		CREATE INDEX IF NOT EXISTS idx_templates_user ON grading_scale_templates(user_id);
+		CREATE INDEX IF NOT EXISTS idx_push_user ON push_subscriptions(user_id);
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_grading_scale_templates_default_user
+		ON grading_scale_templates(user_id) WHERE is_default = 1;
+	`);
+
+	// One-time migration for existing multi-user ownership
+	try {
+		let adminRow = sqlite
+			.prepare("SELECT id FROM users WHERE role = 'admin' ORDER BY created_at ASC LIMIT 1")
+			.get() as { id: string } | undefined;
+
+		if (!adminRow) {
+			const candidate =
+				(sqlite.prepare("SELECT id FROM users WHERE username = 'lehrer' LIMIT 1").get() as
+					| { id: string }
+					| undefined) ||
+				(sqlite.prepare('SELECT id FROM users ORDER BY created_at ASC LIMIT 1').get() as
+					| { id: string }
+					| undefined);
+
+			if (candidate) {
+				sqlite.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(candidate.id);
+				adminRow = candidate;
 			}
+		}
+
+		if (adminRow) {
+			sqlite.prepare('UPDATE courses SET teacher_id = ? WHERE teacher_id IS NULL').run(adminRow.id);
+			sqlite.prepare('UPDATE notes SET author_id = ? WHERE author_id IS NULL').run(adminRow.id);
+			sqlite.prepare('UPDATE push_subscriptions SET user_id = ? WHERE user_id IS NULL').run(adminRow.id);
+			sqlite.prepare('UPDATE grading_scale_templates SET user_id = ? WHERE user_id IS NULL').run(adminRow.id);
+			seedTemplatesForUser(adminRow.id);
 		}
 	} catch (e) {
 		// Table might not exist or error during migration
+	}
+}
+
+export function seedTemplatesForUser(userId: string) {
+	const countRow = sqlite
+		.prepare('SELECT COUNT(*) as count FROM grading_scale_templates WHERE user_id = ?')
+		.get(userId) as { count: number } | undefined;
+
+	if (!countRow || countRow.count === 0) {
+		const insertStmt = sqlite.prepare(`
+			INSERT OR IGNORE INTO grading_scale_templates (id, name, description, scale_json, is_default, created_at, user_id)
+			VALUES (?, ?, ?, ?, ?, ?, ?)
+		`);
+
+		for (const t of DEFAULT_TEMPLATES) {
+			insertStmt.run(
+				`${userId}:${t.id}`,
+				t.name,
+				t.description || null,
+				JSON.stringify(t.scale),
+				t.isDefault ? 1 : 0,
+				Date.now(),
+				userId
+			);
+		}
 	}
 }
 

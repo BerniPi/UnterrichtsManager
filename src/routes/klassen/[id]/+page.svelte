@@ -18,6 +18,7 @@
 			cls: any;
 			students: Array<any>;
 			courses: Array<any>;
+			isAdmin?: boolean;
 		};
 	}
 
@@ -59,27 +60,29 @@
 			</div>
 		</div>
 
-		<div class="flex items-center space-x-3">
-			<form action="?/renumberAlphabetically" method="POST" use:enhance>
-				<button
-					type="submit"
-					class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white font-medium text-xs border border-slate-700 transition flex items-center space-x-1.5 active:scale-95"
-					title="Katalognummern für alle aktiven Schüler alphabetisch (A–Z) durchnummerieren"
-				>
-					<Hash class="w-3.5 h-3.5 text-blue-400" />
-					<span>Katalognummern (A–Z) vergeben</span>
-				</button>
-			</form>
+		{#if data.isAdmin}
+			<div class="flex items-center space-x-3">
+				<form action="?/renumberAlphabetically" method="POST" use:enhance>
+					<button
+						type="submit"
+						class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white font-medium text-xs border border-slate-700 transition flex items-center space-x-1.5 active:scale-95"
+						title="Katalognummern für alle aktiven Schüler alphabetisch (A–Z) durchnummerieren"
+					>
+						<Hash class="w-3.5 h-3.5 text-blue-400" />
+						<span>Katalognummern (A–Z) vergeben</span>
+					</button>
+				</form>
 
-			<button
-				type="button"
-				onclick={() => (showAddModal = true)}
-				class="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs shadow-md shadow-blue-500/20 active:scale-95 transition flex items-center space-x-1.5"
-			>
-				<Plus class="w-4 h-4" />
-				<span>Schüler manuell anlegen</span>
-			</button>
-		</div>
+				<button
+					type="button"
+					onclick={() => (showAddModal = true)}
+					class="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs shadow-md shadow-blue-500/20 active:scale-95 transition flex items-center space-x-1.5"
+				>
+					<Plus class="w-4 h-4" />
+					<span>Schüler manuell anlegen</span>
+				</button>
+			</div>
+		{/if}
 	</div>
 
 	<!-- Courses in this class -->
@@ -149,20 +152,22 @@
 					</div>
 
 					<div class="flex items-center space-x-2">
-						<button
-							type="button"
-							onclick={() => {
-								editingStudent = student;
-								editFirstName = student.first_name;
-								editLastName = student.last_name;
-								editCatalogNumber = student.catalog_number;
-								editWebuntisId = student.webuntis_id || '';
-							}}
-							class="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
-							title="Schülerdaten / Name bearbeiten"
-						>
-							<Pencil class="w-4 h-4 text-blue-400" />
-						</button>
+						{#if data.isAdmin}
+							<button
+								type="button"
+								onclick={() => {
+									editingStudent = student;
+									editFirstName = student.first_name;
+									editLastName = student.last_name;
+									editCatalogNumber = student.catalog_number;
+									editWebuntisId = student.webuntis_id || '';
+								}}
+								class="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+								title="Schülerdaten / Name bearbeiten"
+							>
+								<Pencil class="w-4 h-4 text-blue-400" />
+							</button>
+						{/if}
 
 						<a
 							href="/schueler/{student.id}"
@@ -171,21 +176,23 @@
 							Schülerkarte
 						</a>
 
-						<form action="?/toggleStatus" method="POST" use:enhance>
-							<input type="hidden" name="studentId" value={student.id} />
-							<input type="hidden" name="currentStatus" value={student.status} />
-							<button
-								type="submit"
-								class="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
-								title={student.status === 'active' ? 'Als ausgetreten markieren' : 'Wieder aktivieren'}
-							>
-								{#if student.status === 'active'}
-									<UserX class="w-4 h-4 text-slate-400 hover:text-red-400" />
-								{:else}
-									<UserCheck class="w-4 h-4 text-emerald-400" />
-								{/if}
-							</button>
-						</form>
+						{#if data.isAdmin}
+							<form action="?/toggleStatus" method="POST" use:enhance>
+								<input type="hidden" name="studentId" value={student.id} />
+								<input type="hidden" name="currentStatus" value={student.status} />
+								<button
+									type="submit"
+									class="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+									title={student.status === 'active' ? 'Als ausgetreten markieren' : 'Wieder aktivieren'}
+								>
+									{#if student.status === 'active'}
+										<UserX class="w-4 h-4 text-slate-400 hover:text-red-400" />
+									{:else}
+										<UserCheck class="w-4 h-4 text-emerald-400" />
+									{/if}
+								</button>
+							</form>
+						{/if}
 					</div>
 				</div>
 			{/each}

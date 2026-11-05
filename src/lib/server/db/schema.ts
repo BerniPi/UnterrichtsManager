@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, real, primaryKey } from 'drizzle-orm/sqlite-core';
 import { relations } from 'drizzle-orm';
 
 // --- Auth & Sessions ---
@@ -8,7 +8,11 @@ export const users = sqliteTable('users', {
 	passwordHash: text('password_hash').notNull(),
 	totpSecret: text('totp_secret'),
 	totpEnabled: integer('totp_enabled', { mode: 'boolean' }).notNull().default(false),
-	createdAt: integer('created_at').notNull()
+	createdAt: integer('created_at').notNull(),
+	role: text('role').notNull().default('teacher'), // 'admin' | 'teacher' | 'student'
+	displayName: text('display_name'),
+	isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
+	studentId: text('student_id').references(() => students.id, { onDelete: 'set null' })
 });
 
 export const sessions = sqliteTable('sessions', {
@@ -70,7 +74,8 @@ export const courses = sqliteTable('courses', {
 	weightTests: real('weight_tests').notNull().default(20),
 	weightParticipation: real('weight_participation').notNull().default(25),
 	weightObservations: real('weight_observations').notNull().default(10),
-	weightHomework: real('weight_homework').notNull().default(5)
+	weightHomework: real('weight_homework').notNull().default(5),
+	teacherId: text('teacher_id').references(() => users.id, { onDelete: 'cascade' })
 });
 
 // --- Participation (Mitarbeit wöchentlich) ---
@@ -196,7 +201,8 @@ export const pushSubscriptions = sqliteTable('push_subscriptions', {
 	p256dh: text('p256dh').notNull(),
 	auth: text('auth').notNull(),
 	createdAt: integer('created_at').notNull(),
-	userAgent: text('user_agent')
+	userAgent: text('user_agent'),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' })
 });
 
 // --- Hausübungen ---
@@ -232,7 +238,8 @@ export const notes = sqliteTable('notes', {
 	date: text('date').notNull(), // YYYY-MM-DD
 	category: text('category').notNull(), // 'elterngespraech' | 'auffaelligkeit' | 'foerderung' | 'allgemein'
 	title: text('title').notNull(),
-	content: text('content').notNull()
+	content: text('content').notNull(),
+	authorId: text('author_id').references(() => users.id, { onDelete: 'cascade' })
 });
 
 // --- Stundeneinträge (Lessons / Class periods) ---
@@ -280,6 +287,19 @@ export const settings = sqliteTable('settings', {
 	value: text('value').notNull()
 });
 
+// --- Per-User Settings ---
+export const userSettings = sqliteTable(
+	'user_settings',
+	{
+		userId: text('user_id')
+			.notNull()
+			.references(() => users.id, { onDelete: 'cascade' }),
+		key: text('key').notNull(),
+		value: text('value').notNull()
+	},
+	(table) => [primaryKey({ columns: [table.userId, table.key] })]
+);
+
 // --- Notenschlüssel-Vorlagen (Grading Scale Templates) ---
 export const gradingScaleTemplates = sqliteTable('grading_scale_templates', {
 	id: text('id').primaryKey(),
@@ -287,7 +307,8 @@ export const gradingScaleTemplates = sqliteTable('grading_scale_templates', {
 	description: text('description'),
 	scaleJson: text('scale_json').notNull(),
 	isDefault: integer('is_default', { mode: 'boolean' }).notNull().default(false),
-	createdAt: integer('created_at').notNull()
+	createdAt: integer('created_at').notNull(),
+	userId: text('user_id').references(() => users.id, { onDelete: 'cascade' })
 });
 
 // --- Relations ---

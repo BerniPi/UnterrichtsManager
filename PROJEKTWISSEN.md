@@ -6,8 +6,8 @@
 
 ## Überblick
 
-Web-App für **eine Lehrkraft** (österr. Schulsystem, Mathe/Physik): Mitarbeit, Hausübungen, Tests/Schularbeiten,
-Beobachtungen, Stundeneinträge, Notenvorschlag, Frühwarnungen (§ 19 Abs 4 SchUG), Rücklauf-Fristen, WebUntis-Import/-Export.
+Multi-User-Web-App für Lehrkräfte, Administration und Schüler (österr. Schulsystem, Mathe/Physik u. a.): Mitarbeit, Hausübungen, Tests/Schularbeiten,
+Beobachtungen, Stundeneinträge, Notenvorschlag, Frühwarnungen (§ 19 Abs 4 SchUG), Rücklauf-Fristen, WebUntis-/BGBB-Import und -Export.
 
 | Bereich | Technik |
 |---|---|
@@ -15,17 +15,17 @@ Beobachtungen, Stundeneinträge, Notenvorschlag, Frühwarnungen (§ 19 Abs 4 Sch
 | Styling | Tailwind CSS v4 (`src/routes/layout.css` = nur `@import 'tailwindcss'`), dunkles Slate-Design, kein `dark:` |
 | Icons | `@lucide/svelte` (`lucide-svelte` steht in package.json, wird nicht verwendet) |
 | DB | SQLite über `better-sqlite3` + Drizzle ORM (Schema/Typen), viel rohes SQL via `sqlite.prepare` |
-| Auth | Argon2 (`@node-rs/argon2`), Session-Cookie, optional TOTP (`otpauth`) |
+| Auth | Argon2 (`@node-rs/argon2`), Session-Cookie, optional TOTP (`otpauth`), Rollen (`admin`, `teacher`, `student`) |
 | Sonstiges | `web-push` (VAPID), `xlsx` + `papaparse` (Import/Export), Vitest |
 | Deployment | Docker (Node 24), hinter Caddy (`Caddyfile.snippet`), Backup-Skript `scripts/backup.sh` |
 
 ```
 src/
-  hooks.server.ts            Session prüfen, Login-Pflicht, Seed beim Start
+  hooks.server.ts            Session prüfen, Login-Pflicht, Rollen-Guards (Schüler/Lehrer), Seed beim Start
   lib/server/db/             index.ts (Verbindung + initDb/Migrationen), schema.ts (Drizzle), seed.ts
-  lib/server/auth/           Sessions, TOTP
+  lib/server/auth/           index.ts (Sessions), totp.ts, access.ts (Rollen-/Kurs-Zugriffsschutz + Action-Guard)
   lib/server/repositories/   Datenzugriff je Entität (*.repository.ts, Objekt-Literal `xyzRepository`)
-  lib/server/reminders/      dispatcher.ts: überfällige Rückläufe, Frühwarn-Erinnerungen, Web-Push
+  lib/server/reminders/      dispatcher.ts: überfällige Rückläufe, Frühwarn-Erinnerungen, Web-Push (je Lehrkraft)
   lib/server/bgbb/           client.ts: Schülerimport aus der Bot-API von BGBB Admin
   lib/services/              reine Fachlogik (ohne HTTP), mit *.test.ts
   lib/components/course/     Tabs der Kursseite (Course*Tab.svelte)
@@ -46,7 +46,10 @@ data/notenmanager.db         lokale DB (gitignored)
 | Build | `npm run build` → `build/`, Start mit `node build/index.js` |
 | Docker | `docker compose up -d --build` (`.env` aus `.env.example`) |
 
-Lokaler Login (Seed): `lehrer` / `notenmanager123` (oder `ADMIN_PASSWORD`).
+Lokaler Login (Seed):
+- Admin/Lehrer 1: `lehrer` / `notenmanager123` (oder `ADMIN_PASSWORD`) – Kurse `3B Mathematik`, `3B Physik`, `7A Physik`
+- Demo-Lehrer 2 (nur Dev): `lehrer2` / `notenmanager123` – Kurs `3B Biologie`
+
 Vitest: `expect.requireAssertions: true` → jeder Test braucht mindestens ein `expect`.
 
 ## Umgebungsvariablen
@@ -63,11 +66,37 @@ Vitest: `expect.requireAssertions: true` → jeder Test braucht mindestens ein `
 
 VAPID-Keys werden automatisch erzeugt und in `settings` gespeichert (`vapid_public_key`, `vapid_private_key`).
 
+## Multi-User, Rollen und Zugriffsschutz
+
+### Rollen (`users.role`)
+- **`teacher`** (Standard): verwaltet eigene Kurse (`courses.teacher_id = user.id`), sieht Klassen und Schüler stammdatenmäßig, auf `/schueler/[id]` und `/klassen/[id]` aber nur Noten/Daten aus eigenen Kursen bzw. eigene Notizen (`notes.author_id = user.id`).
+- **`admin`**: ist eine Lehrkraft mit Zusatzrechten. Sieht ebenfalls **nur die eigenen Kurse** (keine fremden Kurse). Darf zusätzlich:
+  - Klassen anlegen, WebUntis-/BGBB-Import durchführen, Schüler anlegen/bearbeiten/deaktivieren/neu nummerieren (`/klassen`, `/klassen/[id]`, `/schueler/[id]`),
+  - BGBB-Konfiguration bearbeiten, DB-Backup herunterladen/einspielen, fiktive Testdaten zurücksetzen (`/einstellungen`, `/api/backup/*`),
+  - Benutzerverwaltung `/benutzer` nutzen (Konten anlegen, aktivieren/deaktivieren, Passwort/TOTP zurücksetzen, Kurse einem anderen Lehrer übertragen).
+- **`student`**: verknüpft über `users.student_id` mit `students.id`. Hat nur Lesezugriff auf `/meine-noten` (sieht pro Kurs der eigenen Klasse die gewerteten Schularbeiten/Tests mit Punkten und Note sowie eingetragene Endnoten; keine internen Lehrernotizen, Beobachtungen oder Mitarbeits-Kommentare).
+
+### Guards (`hooks.server.ts` & `src/lib/server/auth/access.ts`)
+- **`hooks.server.ts`**:
+  - Ruft `seedDatabase()` beim Start; ohne gültige Session Redirect 303 auf `/login`.
+  - Deaktivierte Benutzer (`is_active = 0`) werden bei `validateSessionToken` sofort abgemeldet und ihre Sessions gelöscht.
+  - Schüler (`role === 'student'`) dürfen nur auf `/meine-noten`, `/logout` und öffentliche Pfade (`/login*`, `/manifest.json`, `/sw.js`, `/icon.svg`, `/api/push/public-key`); andere Seiten leiten auf `/meine-noten` um, `/api/*`-Aufrufe liefern 403.
+  - Lehrer und Admins werden bei Aufruf von `/meine-noten` auf `/` umgeleitet.
+- **`src/lib/server/auth/access.ts`**:
+  - `requireUser(locals)` (401), `requireTeacher(locals)` (403 für Schüler), `requireAdmin(locals)` (403 für Nicht-Admins).
+  - `assertCourseOwned(courseId, userId)`: prüft `courses.teacher_id === userId`; wirft bei fremdem oder nicht existierendem Kurs immer **404** (verhindert ID-Enumeration).
+  - `guardCourseActions(actions, { courseIdParam })` / `verifyActionOwnership(formData, userId, routeCourseId)`: umschließt alle Form Actions auf `/kurse/[id]`, `/stundenansicht` und `/`. Liest aus einem geklonten Request die FormData und prüft automatisch übergebene IDs (`courseId`, `assessmentId`, `observationId`, `lessonId`, `homeworkId`, `returnId`, `warningId`, `noteId`, Paare `entityType`/`entityId` und `type`/`id`) sowie ob `studentId` zur Klasse des eigenen Kurses gehört.
+
+### Konzept: Massen-Generieren von Schüler-Accounts aus dem BGBB-Import
+- Aktuell werden Schüler-Accounts bei Bedarf manuell in `/benutzer` angelegt und mit einem Schüler (`student_id`) verknüpft.
+- Für eine künftige Massen-Anlage aus dem BGBB-Import ist folgendes Vorgehen vorgesehen:
+  1. Voraussetzung ist eine gesetzte `students.schkz` aus dem BGBB-Import.
+  2. Pro aktivem Schüler ohne bestehenden Account (`SELECT id FROM users WHERE student_id = student.id`) wird ein Benutzer mit `role = 'student'`, `student_id = student.id`, `display_name = "<Vorname> <Nachname>"` und eindeutigem `username` (abgeleitet aus `schkz`, z. B. `s<schkz>`) erzeugt.
+  3. Dazu wird ein zufälliges Einmalpasswort generiert, mit Argon2 gehasht in `users.password_hash` gespeichert und dem Admin einmalig als druckbare/exportierbare Liste (Klasse, Name, Benutzername, Einmalpasswort) ausgegeben.
+
 ## Backend
 
-- **`hooks.server.ts`**: ruft `seedDatabase()` beim Start; ohne Session Redirect 303 auf `/login`.
-  Öffentlich: `/login*`, `/manifest.json`, `/sw.js`, `/icon.svg`, `/api/push/public-key`.
-- **Sessions**: Cookie `notenmanager_session`, in DB als SHA-256-Hash gespeichert, 30 Tage, verlängert ab Halbzeit.
+- **Sessions**: Cookie `notenmanager_session`, in DB als SHA-256-Hash gespeichert, 30 Tage, verlängert ab Halbzeit. `invalidateAllUserSessions(userId)` beendet alle aktiven Sessions eines Benutzers (z. B. bei Deaktivierung oder Passwort-Reset).
 - **CSRF**: `csrf.trustedOrigins: ['*']` in `vite.config.ts`.
 - **Logik-Schichten**: Route (`+page.server.ts`, Form Actions) → Repository oder direkt `sqlite`/`db` → Services für Berechnungen.
   Routen greifen oft auch direkt per SQL zu.
@@ -78,23 +107,25 @@ VAPID-Keys werden automatisch erzeugt und in `settings` gespeichert (`vapid_publ
 
 | Route | Inhalt / wichtige Actions |
 |---|---|
-| `/` | Dashboard: überfällige Rückläufe, Frühwarn-Erinnerungen; `markReturnSigned`, `snooze`, `recordAsked`, `triggerPushCheck` … |
-| `/stundenansicht` | Mobile Erfassung im Unterricht: `setParticipation`, `setHomeworkStatus`, `quickNote`, Stundennotizen, Rücklauf-Schnellaktionen |
-| `/klassen` | Klassen anlegen, WebUntis-Import (`parseUpload` → Vorschau → `commitImport`), BGBB-Import (`bgbbLoadClasses` → `bgbbPreview` → `bgbbCommit`) |
-| `/klassen/[id]` | Schülerliste: `addStudent`, `toggleStatus`, `renumberAlphabetically`, `updateStudent` |
-| `/kurse` | Kurse (Klasse + Fach) anlegen |
-| `/kurse/[id]?tab=…` | Kursseite mit Tabs, größte Action-Datei (Tests, Beobachtungen, Stunden, HÜ, Frühwarnungen, Gewichtung, Endnote) |
-| `/schueler/[id]` | Schülerkarte: Gesamtübersicht, Notizen (`addNote`, `deleteNote`), `updateStudent` |
-| `/einstellungen` | Einstellungen, BGBB-Anbindung (`updateBgbbSettings`, `testBgbbConnection`), Passwort, TOTP, Notenschlüssel-Vorlagen, `resetFictionalData` |
-| `/login`, `/logout` | Anmeldung (mit TOTP), Abmeldung (GET+POST) |
-| `/api/backup/download`, `/api/backup/upload` | SQLite-Backup herunterladen / wiederherstellen (max. 50 MB) |
-| `/api/export/webuntis` | Notenliste als xlsx/csv |
-| `/api/push/public-key`, `/api/push/subscribe` | Web-Push |
+| `/` | Dashboard (eigene Kurse): überfällige Rückläufe, Frühwarn-Erinnerungen; `markReturnSigned`, `snooze`, `recordAsked`, `triggerPushCheck` … (geschützt mit `guardCourseActions`) |
+| `/stundenansicht` | Mobile Erfassung im Unterricht (eigene Kurse): `setParticipation`, `setHomeworkStatus`, `quickNote`, Stundennotizen, Rücklauf-Schnellaktionen (geschützt mit `guardCourseActions`) |
+| `/klassen` | Klassenübersicht; nur Admin: Klassen anlegen (`create`), WebUntis-Import (`parseUpload` → `commitImport`), BGBB-Import (`bgbbLoadClasses` → `bgbbPreview` → `bgbbCommit`) |
+| `/klassen/[id]` | Schülerliste & eigene Kurse der Klasse; nur Admin: `addStudent`, `toggleStatus`, `renumberAlphabetically`, `updateStudent` |
+| `/kurse` | Eigene Kurse (Klasse + Fach) anlegen (`teacher_id` = aktueller Lehrer) |
+| `/kurse/[id]?tab=…` | Kursseite mit Tabs (nur eigener Kurs, sonst 404), größte Action-Datei (geschützt mit `guardCourseActions`) |
+| `/schueler/[id]` | Schülerkarte: Stammdaten + Kurse/Noten/Mitarbeit/Stundennotizen nur aus eigenen Kursen, eigene Notizen (`notes.author_id`); `updateStudent` nur für Admin |
+| `/einstellungen` | Benutzereinstellungen (`user_settings`), Passwort, TOTP, eigene Notenschlüssel-Vorlagen; nur Admin: BGBB-Anbindung, Backup, `resetFictionalData` |
+| `/benutzer` | Benutzerverwaltung (nur Admin): Benutzerliste, Lehrer/Admin/Schüler anlegen, aktivieren/deaktivieren, Passwort/TOTP zurücksetzen, Kurse übertragen |
+| `/meine-noten` | Schüler-Ansicht (nur `role = 'student'`, read-only): Kurse der eigenen Klasse mit gewerteten Schularbeiten/Tests und Endnoten |
+| `/login`, `/logout` | Anmeldung (mit TOTP; leitet Schüler auf `/meine-noten`, Lehrer/Admin auf `/`), Abmeldung (GET+POST) |
+| `/api/backup/download`, `/api/backup/upload` | SQLite-Backup herunterladen / wiederherstellen (max. 50 MB, nur Admin) |
+| `/api/export/webuntis` | Notenliste als xlsx/csv (nur für eigene Kurse) |
+| `/api/push/public-key`, `/api/push/subscribe` | Web-Push (Abos sind an `user_id` gebunden) |
 
 Tab-IDs der Kursseite: `noten`, `hausuebungen`, `tests`, `beobachtungen` (Haupttabs), `stunden`, `fruehwarnungen`,
 `gewichtung` (unter „Weiteres“). Weitere Query-Parameter: `assessmentId`, `studentId`.
 
-`+layout.server.ts` lädt für alle Seiten: aktuelles Schuljahr (`is_current`, sonst neuestes), Klassen, Kurse, Anzahl Überfälliger.
+`+layout.server.ts` lädt für Lehrer/Admins: aktuelles Schuljahr (`is_current`, sonst neuestes), Klassen, eigene Kurse, Anzahl Überfälliger in eigenen Kursen.
 
 ## Frontend
 
@@ -102,21 +133,21 @@ Tab-IDs der Kursseite: `noten`, `hausuebungen`, `tests`, `beobachtungen` (Hauptt
 - Speichern zeigt **Toasts als fixe, schwebende Overlays** (keine Layout-Sprünge); Punkteingaben speichern automatisch,
   Fokus/Tab-Position darf dabei nicht verloren gehen.
 - Hauptnavigation (`src/routes/+layout.svelte`): Hausübung, Tests & Schularbeiten, Beobachtungen springen direkt in den
-  Kurs-Tab (aktueller Kurs, sonst erster Kurs); bei mehreren Kursen Auswahl über Dropdown.
+  Kurs-Tab (aktueller Kurs, sonst erster Kurs); bei mehreren Kursen Auswahl über Dropdown. Für Admins erscheint zusätzlich `/benutzer`; für Schüler wird eine reduzierte Kopfzeile auf `/meine-noten` angezeigt.
 - Kursseite `src/routes/kurse/[id]/+page.svelte` ist nur Tab-Leiste; Inhalte in `src/lib/components/course/Course*Tab.svelte`.
 - PWA: `static/manifest.json`, `static/sw.js` (Push-Empfang).
 
 ## Datenmodell
 
 IDs sind `TEXT` (`crypto.randomUUID()`), Datumsfelder `TEXT` im Format `YYYY-MM-DD`, Zeitstempel `INTEGER` (ms).
-Booleans als `INTEGER 0/1`. Fremdschlüssel mit `ON DELETE CASCADE` (Ausnahme `notes.course_id` → `SET NULL`).
+Booleans als `INTEGER 0/1`. Fremdschlüssel mit `ON DELETE CASCADE` (Ausnahmen: `notes.course_id` → `SET NULL`, `users.student_id` → `SET NULL`).
 
 | Tabelle | Zweck / Besonderheiten |
 |---|---|
-| `users`, `sessions` | Login, TOTP |
-| `school_years` | Semesterenden, Notenschluss- und Frühwarnfristen, `is_current` |
-| `classes` → `students` | Schüler: `catalog_number`, `webuntis_id`, `schkz` (aus BGBB Admin), `status` `active`/`inactive` |
-| `courses` | Klasse + Fach + Gewichte (`weight_schularbeiten` 40, `tests` 20, `participation` 25, `observations` 10, `homework` 5) |
+| `users`, `sessions` | Login, TOTP, `role` (`admin`/`teacher`/`student`), `display_name`, `is_active` (1/0), `student_id` → `students.id` |
+| `school_years` | Semesterenden, Notenschluss- und Frühwarnfristen, `is_current` (schulweit) |
+| `classes` → `students` | Schüler (schulweit): `catalog_number`, `webuntis_id`, `schkz` (aus BGBB Admin), `status` `active`/`inactive` |
+| `courses` | Klasse + Fach + `teacher_id` → `users.id` + Gewichte (`weight_schularbeiten` 40, `tests` 20, `participation` 25, `observations` 10, `homework` 5) |
 | `participation_entries` | Mitarbeit `plus`/`tilde`/`minus`, **eindeutig je Kurs+Schüler+ISO-Woche** |
 | `observations` → `observation_scores` | Beobachtungen mit Punkten; `note` global bzw. je Schüler |
 | `assessments` → `assessment_results` | `type` `schularbeit`/`test`/`wiederholung`; `grading_scale` als JSON; `is_counted`; Ergebnis mit `is_absent`, `is_made_up` |
@@ -125,10 +156,12 @@ Booleans als `INTEGER 0/1`. Fremdschlüssel mit `ON DELETE CASCADE` (Ausnahme `n
 | `reminder_logs` | `asked`/`push_sent`/`snoozed` für Rückläufe und Frühwarnungen |
 | `homeworks` → `homework_statuses` | `done`/`partial`/`forgotten` |
 | `lesson_entries` → `lesson_student_notes` | Stundeneinträge (Thema, globale Notiz) + Notiz je Schüler |
-| `notes` | Schülernotizen, `category` `elterngespraech`/`auffaelligkeit`/`foerderung`/`allgemein` |
+| `notes` | Schülernotizen, `author_id` → `users.id`, `category` `elterngespraech`/`auffaelligkeit`/`foerderung`/`allgemein` |
 | `course_final_grades` | Endnote je Kurs+Schüler+Semester (`manual_grade` überschreibt Vorschlag) |
-| `settings` | Key/Value: `teacher_name`, `default_return_days` (7), `early_warning_threshold` (4.5), VAPID-Keys |
-| `grading_scale_templates` | Notenschlüssel-Vorlagen, höchstens eine mit `is_default = 1` |
+| `settings` | Globale Key/Value-Einstellungen: Fallback-Werte, VAPID-Keys, BGBB-Konfiguration (`bgbb_api_url`, `bgbb_api_key`) |
+| `user_settings` | Benutzerspezifische Einstellungen `(user_id, key, value)` für `teacher_name`, `default_return_days`, `early_warning_threshold`, `email_summary_enabled` (fällt bei fehlendem Wert auf `settings` zurück) |
+| `push_subscriptions` | Web-Push-Abos je Benutzer (`user_id` → `users.id`) |
+| `grading_scale_templates` | Notenschlüssel-Vorlagen je Benutzer (`user_id` → `users.id`), eindeutiger Index `idx_grading_scale_templates_default_user` für höchstens eine Standard-Vorlage (`is_default = 1`) pro Benutzer |
 
 Eindeutige Indizes je (Eltern-ID, `student_id`) auf Ergebnissen, Rückläufen, HÜ-Status, Beobachtungs-Punkten, Stunden-Notizen.
 
@@ -136,6 +169,7 @@ Eindeutige Indizes je (Eltern-ID, `student_id`) auf Ergebnissen, Rückläufen, H
 
 - **Kein drizzle-kit-Workflow** (keine Migrationsdateien, keine drizzle.config). `initDb()` in `src/lib/server/db/index.ts`
   legt alle Tabellen mit `CREATE TABLE IF NOT EXISTS` an und läuft bei jedem Start.
+- Einmalige Multi-User-Datenübernahme in `initDb()`: existiert noch kein Admin, wird `lehrer` (sonst der älteste Benutzer) zum `admin`; alle Kurse, Notizen, Push-Abos und Vorlagen ohne Besitzer werden diesem Admin zugewiesen. Neue Lehrer erhalten über `seedTemplatesForUser(userId)` eine Kopie der vier Standard-Vorlagen.
 - Neue Spalte für bestehende DBs: in **drei Stellen** eintragen:
   1. `schema.ts` (Drizzle),
   2. `CREATE TABLE` in `initDb()`,
@@ -148,7 +182,7 @@ Eindeutige Indizes je (Eltern-ID, `student_id`) auf Ergebnissen, Rückläufen, H
 ## Fachliche Regeln
 
 - **Notenschlüssel** (`services/grading.ts`): Standard 88/75/60/50 %; Note = erste Schwelle mit `percent + 1e-9 >= minPercent`
-  (nur Float-Rauschen tolerieren, nie aufrunden). Vorlagen: `austrian-standard` (Default), `strict`, `lenient`, `linear-four-step`.
+  (nur Float-Rauschen tolerieren, nie aufrunden). Vorlagen: `austrian-standard` (Default), `strict`, `lenient`, `linear-four-step` (pro Benutzer mit ID `<userId>:<slug>` angelegt).
 - **Notenvorschlag** (`calculateGradeSuggestion`): gewichteter Schnitt nur über Teilbereiche **mit Daten**
   (Gewicht leerer Bereiche fällt weg). Vorschlag = `Math.round(rawAverage)`, begrenzt auf 1–5.
   - Schularbeiten/Tests: Durchschnitt der Noten; `wiederholung` zählt als Test; `is_absent` und `is_counted = 0` werden ignoriert.
@@ -178,8 +212,8 @@ Eindeutige Indizes je (Eltern-ID, `student_id`) auf Ergebnissen, Rückläufen, H
   Der API-Key wird nur serverseitig verwendet und nie an den Browser geschickt (liegt aber in `settings` und damit im Backup).
 - **Datum/Zeitzone**: `services/dates.ts` verwenden (`todayVienna`, `addDays` in UTC-Arithmetik, `getIsoWeekAndYear`).
   Achtung: einige Stellen nutzen noch `new Date().toISOString().slice(0, 10)` (UTC) – kann kurz nach Mitternacht abweichen.
-- **Push** wird nur manuell ausgelöst (Action `triggerPushCheck` auf `/`), es gibt keinen Zeitplan im Server.
-- **Seed**: nur wenn noch kein User existiert; Demo-Daten nur ohne `NODE_ENV=production`, ausschließlich fiktive Namen.
+- **Push** wird nur manuell ausgelöst (Action `triggerPushCheck` auf `/`), es gibt keinen Zeitplan im Server. `runReminderCheck` prüft je aktiver Lehrkraft deren eigene Kurse und sendet die Push-Benachrichtigung ausschließlich an die eigenen Push-Abos (`push_subscriptions.user_id`).
+- **Seed**: nur wenn noch kein User existiert; Demo-Daten nur ohne `NODE_ENV=production` (inkl. zweitem Demo-Lehrer `lehrer2`), ausschließlich fiktive Namen.
 
 ## Arbeitsweise
 

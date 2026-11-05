@@ -59,8 +59,13 @@ export const earlyWarningRepository = {
 		}));
 	},
 
-	getByStudent(studentId: string): EarlyWarningWithDetails[] {
+	getByStudent(studentId: string, teacherId?: string): EarlyWarningWithDetails[] {
 		const todayStr = new Date().toISOString().slice(0, 10);
+		const whereClause = teacherId
+			? 'WHERE ew.student_id = ? AND c.teacher_id = ?'
+			: 'WHERE ew.student_id = ?';
+		const args = teacherId ? [todayStr, studentId, teacherId] : [todayStr, studentId];
+
 		const rows = sqlite
 			.prepare(
 				`
@@ -84,11 +89,11 @@ export const earlyWarningRepository = {
 			JOIN students s ON ew.student_id = s.id
 			JOIN courses c ON ew.course_id = c.id
 			JOIN classes cl ON c.class_id = cl.id
-			WHERE ew.student_id = ?
+			${whereClause}
 			ORDER BY ew.issued_date DESC
 		`
 			)
-			.all(todayStr, studentId) as any[];
+			.all(...args) as any[];
 
 		return rows.map((r) => ({
 			...r,

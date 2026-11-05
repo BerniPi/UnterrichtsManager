@@ -7,9 +7,9 @@ import { todayVienna } from '../../services/dates';
 
 // Setup VAPID keys from settings or generate them
 export function getOrCreateVapidKeys() {
-	const pubKeyRow = sqlite.prepare('SELECT value FROM settings WHERE key = ?').get('vapid_public_key') as
-		| { value: string }
-		| undefined;
+	const pubKeyRow = sqlite
+		.prepare('SELECT value FROM settings WHERE key = ?')
+		.get('vapid_public_key') as { value: string } | undefined;
 	const privKeyRow = sqlite
 		.prepare('SELECT value FROM settings WHERE key = ?')
 		.get('vapid_private_key') as { value: string } | undefined;
@@ -35,20 +35,21 @@ export function getOrCreateVapidKeys() {
 
 export function initWebPush() {
 	const keys = getOrCreateVapidKeys();
-	webpush.setVapidDetails(
-		'mailto:lehrer@notenmanager.local',
-		keys.publicKey,
-		keys.privateKey
-	);
+	webpush.setVapidDetails('mailto:lehrer@notenmanager.local', keys.publicKey, keys.privateKey);
 	return keys.publicKey;
 }
 
-export async function sendPushToAll(title: string, body: string, url: string = '/') {
+async function dispatchToSubscriptions(
+	subscriptions: Array<typeof schema.pushSubscriptions.$inferSelect>,
+	title: string,
+	body: string,
+	url: string = '/'
+) {
+	if (subscriptions.length === 0) return [];
 	initWebPush();
-	const subscriptions = db.select().from(schema.pushSubscriptions).all();
 	const payload = JSON.stringify({ title, body, url });
 
-	const results = await Promise.allSettled(
+	return Promise.allSettled(
 		subscriptions.map(async (sub) => {
 			try {
 				await webpush.sendNotification(
@@ -72,8 +73,25 @@ export async function sendPushToAll(title: string, body: string, url: string = '
 			}
 		})
 	);
+}
 
-	return results;
+export async function sendPushToUser(
+	userId: string,
+	title: string,
+	body: string,
+	url: string = '/'
+) {
+	const subscriptions = db
+		.select()
+		.from(schema.pushSubscriptions)
+		.where(eq(schema.pushSubscriptions.userId, userId))
+		.all();
+	return dispatchToSubscriptions(subscriptions, title, body, url);
+}
+
+export async function sendPushToAll(title: string, body: string, url: string = '/') {
+	const subscriptions = db.select().from(schema.pushSubscriptions).all();
+	return dispatchToSubscriptions(subscriptions, title, body, url);
 }
 
 export interface OverdueSummary {
@@ -99,9 +117,17 @@ export interface OverdueSummary {
 }
 
 /**
- * Scans SQLite database for overdue items.
- */
-export function getOverdueItems(referenceDateStr: string = new Date().toISOString().slice(0, 10)): OverdueSummary {
+	* Scans SQLite database for overdue items, optionally scoped to a specific teacher.
+	*/
+export function getOverdueItems(
+	referenceDateStr: string = new Date().toISOString().slice(0, 10),
+	userId?: string
+): OverdueSummary {
+	const teacherFilter = userId ? 'AND co.teacher_id = ?' : '';
+	const args = userId
+		? [referenceDateStr, referenceDateStr, referenceDateStr, userId]
+		: [referenceDateStr, referenceDateStr, referenceDateStr];
+
 	// Overdue Assessment Returns
 	const returns = sqlite
 		.prepare(
@@ -122,10 +148,11 @@ export function getOverdueItems(referenceDateStr: string = new Date().toISOStrin
 		WHERE ar.is_signed = 0
 		  AND ar.due_date < ?
 		  AND (ar.snoozed_until IS NULL OR ar.snoozed_until <= ?)
+		  ${teacherFilter}
 		ORDER BY ar.due_date ASC
 	`
 		)
-		.all(referenceDateStr, referenceDateStr, referenceDateStr) as Array<{
+		.all(...args) as Array<{
 		id: string;
 		student_name: string;
 		course_subject: string;
@@ -154,10 +181,11 @@ export function getOverdueItems(referenceDateStr: string = new Date().toISOStrin
 		WHERE ew.is_signed = 0
 		  AND ew.due_date < ?
 		  AND (ew.snoozed_until IS NULL OR ew.snoozed_until <= ?)
+		  ${teacherFilter}
 		ORDER BY ew.due_date ASC
 	`
 		)
-		.all(referenceDateStr, referenceDateStr, referenceDateStr) as Array<{
+		.all(...args) as Array<{
 		id: string;
 		student_name: string;
 		course_subject: string;
@@ -205,12 +233,18 @@ export interface AssessmentEarlyWarningReminder {
 }
 
 /**
- * Finds students who received a grade 5 on an assessment 1 week or more ago,
- * but do not yet have an early warning issued in that course for the semester.
- */
+	* Finds students who received a grade 5 on an assessment 1 week or more ago,
+	* but do not yet have an early warning issued in that course for the semester.
+	*/
 export function getAssessmentEarlyWarningReminders(
-	referenceDateStr: string = todayVienna()
+	referenceDateStr: string = todayVienna(),
+	userId?: string
 ): AssessmentEarlyWarningReminder[] {
+	const teacherFilter = userId ? 'AND c.teacher_id = ?' : '';
+	const args = userId
+		? [referenceDateStr, referenceDateStr, referenceDateStr, referenceDateStr, userId]
+		: [referenceDateStr, referenceDateStr, referenceDateStr, referenceDateStr];
+
 	const rows = sqlite
 		.prepare(
 			`
@@ -252,10 +286,11 @@ export function getAssessmentEarlyWarningReminders(
 			        OR (rl.type = 'snoozed' AND rl.note > ?)
 			    )
 		  )
+		  ${teacherFilter}
 		ORDER BY a.date DESC, s.last_name ASC
 	`
 		)
-		.all(referenceDateStr, referenceDateStr, referenceDateStr, referenceDateStr) as Array<{
+		.all(...args) as Array<{
 		assessment_id: string;
 		assessment_title: string;
 		assessment_type: string;
@@ -285,52 +320,65 @@ export function getAssessmentEarlyWarningReminders(
 }
 
 /**
- * Checks for overdue items & early warning reminders and dispatches Web Push notifications if there are any.
- */
+	* Checks for overdue items & early warning reminders per teacher and dispatches
+	* each teacher's own Web Push notifications to their own subscriptions.
+	*/
 export async function runReminderCheck(referenceDateStr: string = todayVienna()) {
-	const summary = getOverdueItems(referenceDateStr);
-	const assessmentReminders = getAssessmentEarlyWarningReminders(referenceDateStr);
-	const totalItems = summary.totalOverdue + assessmentReminders.length;
-	if (totalItems === 0) {
-		return { dispatched: false, count: 0 };
+	const teachers = sqlite
+		.prepare("SELECT id FROM users WHERE is_active = 1 AND role IN ('teacher', 'admin')")
+		.all() as Array<{ id: string }>;
+
+	let totalDispatchedCount = 0;
+	let anyDispatched = false;
+
+	for (const teacher of teachers) {
+		const summary = getOverdueItems(referenceDateStr, teacher.id);
+		const assessmentReminders = getAssessmentEarlyWarningReminders(referenceDateStr, teacher.id);
+		const totalItems = summary.totalOverdue + assessmentReminders.length;
+		if (totalItems === 0) continue;
+
+		const parts: string[] = [];
+		if (summary.overdueReturns.length > 0)
+			parts.push(`${summary.overdueReturns.length} Test-Rücklauf(e)`);
+		if (summary.overdueEarlyWarnings.length > 0)
+			parts.push(`${summary.overdueEarlyWarnings.length} Frühwarnungs-Rücklauf(e)`);
+		if (assessmentReminders.length > 0)
+			parts.push(`${assessmentReminders.length} Frühwarn-Erinnerung(en) nach Tests`);
+
+		const title = `⚠️ ${totalItems} Benachrichtigung(en)`;
+		const body = `${parts.join(', ')} stehen aus bzw. sind überfällig.`;
+
+		await sendPushToUser(teacher.id, title, body, '/');
+		anyDispatched = true;
+		totalDispatchedCount += totalItems;
+
+		// Log that reminder was sent
+		for (const ret of summary.overdueReturns) {
+			db.insert(schema.reminderLogs)
+				.values({
+					id: crypto.randomUUID(),
+					entityType: 'assessment_return',
+					entityId: ret.id,
+					date: new Date().toISOString(),
+					type: 'push_sent',
+					note: `${ret.daysOverdue} Tage überfällig`
+				})
+				.run();
+		}
+
+		for (const ew of summary.overdueEarlyWarnings) {
+			db.insert(schema.reminderLogs)
+				.values({
+					id: crypto.randomUUID(),
+					entityType: 'early_warning',
+					entityId: ew.id,
+					date: new Date().toISOString(),
+					type: 'push_sent',
+					note: `${ew.daysOverdue} Tage überfällig`
+				})
+				.run();
+		}
 	}
 
-	const parts: string[] = [];
-	if (summary.overdueReturns.length > 0) parts.push(`${summary.overdueReturns.length} Test-Rücklauf(e)`);
-	if (summary.overdueEarlyWarnings.length > 0) parts.push(`${summary.overdueEarlyWarnings.length} Frühwarnungs-Rücklauf(e)`);
-	if (assessmentReminders.length > 0) parts.push(`${assessmentReminders.length} Frühwarn-Erinnerung(en) nach Tests`);
-
-	const title = `⚠️ ${totalItems} Benachrichtigung(en)`;
-	const body = `${parts.join(', ')} stehen aus bzw. sind überfällig.`;
-
-	await sendPushToAll(title, body, '/');
-
-	// Log that reminder was sent
-	for (const ret of summary.overdueReturns) {
-		db.insert(schema.reminderLogs)
-			.values({
-				id: crypto.randomUUID(),
-				entityType: 'assessment_return',
-				entityId: ret.id,
-				date: new Date().toISOString(),
-				type: 'push_sent',
-				note: `${ret.daysOverdue} Tage überfällig`
-			})
-			.run();
-	}
-
-	for (const ew of summary.overdueEarlyWarnings) {
-		db.insert(schema.reminderLogs)
-			.values({
-				id: crypto.randomUUID(),
-				entityType: 'early_warning',
-				entityId: ew.id,
-				date: new Date().toISOString(),
-				type: 'push_sent',
-				note: `${ew.daysOverdue} Tage überfällig`
-			})
-			.run();
-	}
-
-	return { dispatched: true, count: totalItems };
+	return { dispatched: anyDispatched, count: totalDispatchedCount };
 }

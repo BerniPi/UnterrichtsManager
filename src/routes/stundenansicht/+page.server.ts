@@ -1,14 +1,16 @@
 import type { PageServerLoad, Actions } from './$types';
 import { db, sqlite } from '$lib/server/db';
 import * as schema from '$lib/server/db/schema';
-import { eq, and } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import crypto from 'node:crypto';
 import { calculateSnoozeDate } from '$lib/services/reminders';
 import { getIsoWeekAndYear } from '$lib/services/dates';
 import { lessonRepository } from '$lib/server/repositories/lesson.repository';
 import { homeworkRepository } from '$lib/server/repositories/homework.repository';
+import { requireTeacher, guardCourseActions } from '$lib/server/auth/access';
 
-export const load: PageServerLoad = async ({ url, parent }) => {
+export const load: PageServerLoad = async ({ url, parent, locals }) => {
+	requireTeacher(locals);
 	const layoutData = await parent();
 	const courses = layoutData.coursesList || [];
 
@@ -182,7 +184,10 @@ export const load: PageServerLoad = async ({ url, parent }) => {
 
 	let activeLesson = null;
 	if (requestedLessonId) {
-		activeLesson = lessonRepository.getById(requestedLessonId);
+		const candidate = lessonRepository.getById(requestedLessonId);
+		if (candidate && candidate.courseId === selectedCourse.id) {
+			activeLesson = candidate;
+		}
 	}
 	if (!activeLesson) {
 		const targetDate = requestedDate || todayStr;
@@ -222,7 +227,7 @@ export const load: PageServerLoad = async ({ url, parent }) => {
 	};
 };
 
-export const actions: Actions = {
+export const actions: Actions = guardCourseActions({
 	setParticipation: async ({ request }) => {
 		const form = await request.formData();
 		const courseId = form.get('courseId')?.toString();
@@ -300,7 +305,7 @@ export const actions: Actions = {
 		return { success: true };
 	},
 
-	quickNote: async ({ request }) => {
+	quickNote: async ({ request, locals }) => {
 		const form = await request.formData();
 		const studentId = form.get('studentId')?.toString();
 		const courseId = form.get('courseId')?.toString() || null;
@@ -318,6 +323,7 @@ export const actions: Actions = {
 				id: crypto.randomUUID(),
 				studentId,
 				courseId,
+				authorId: locals.user!.id,
 				date: todayStr,
 				category,
 				title,
@@ -426,4 +432,4 @@ export const actions: Actions = {
 		const id = lessonRepository.create({ courseId, date, topic, note });
 		return { success: true, createdLessonId: id };
 	}
-};
+});

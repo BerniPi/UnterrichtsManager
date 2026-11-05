@@ -238,7 +238,19 @@ export const lessonRepository = {
 		})();
 	},
 
-	getStudentHistory(studentId: string, courseId?: string) {
+	getStudentHistory(studentId: string, courseId?: string, teacherId?: string) {
+		const conditions = ['lsn.student_id = ?'];
+		const args: string[] = [studentId];
+
+		if (courseId) {
+			conditions.push('c.id = ?');
+			args.push(courseId);
+		}
+		if (teacherId) {
+			conditions.push('c.teacher_id = ?');
+			args.push(teacherId);
+		}
+
 		const query = `
 			SELECT 
 				lsn.id,
@@ -254,10 +266,9 @@ export const lessonRepository = {
 			JOIN lesson_entries l ON lsn.lesson_id = l.id
 			JOIN courses c ON l.course_id = c.id
 			JOIN classes cl ON c.class_id = cl.id
-			WHERE lsn.student_id = ? ${courseId ? 'AND c.id = ?' : ''}
+			WHERE ${conditions.join(' AND ')}
 			ORDER BY l.date DESC, l.created_at DESC
 		`;
-		const args = courseId ? [studentId, courseId] : [studentId];
 		return sqlite.prepare(query).all(...args) as Array<{
 			id: string;
 			studentNote: string;

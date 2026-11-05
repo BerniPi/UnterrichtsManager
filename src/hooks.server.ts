@@ -13,6 +13,9 @@ export const handle: Handle = async ({ event, resolve }) => {
 		event.locals.session = null;
 	} else {
 		const { session, user } = validateSessionToken(token);
+		if (!user) {
+			event.cookies.delete(SESSION_COOKIE_NAME, { path: '/' });
+		}
 		event.locals.user = user;
 		event.locals.session = session;
 	}
@@ -28,17 +31,54 @@ export const handle: Handle = async ({ event, resolve }) => {
 		url.startsWith('/api/push/public-key');
 
 	if (!event.locals.user && !isPublic) {
+		if (url.startsWith('/api/')) {
+			return new Response(JSON.stringify({ error: 'Nicht angemeldet' }), {
+				status: 401,
+				headers: { 'Content-Type': 'application/json' }
+			});
+		}
 		return new Response(null, {
 			status: 303,
 			headers: { Location: '/login' }
 		});
 	}
 
-	if (event.locals.user && url === '/login' && event.request.method === 'GET') {
-		return new Response(null, {
-			status: 303,
-			headers: { Location: '/' }
-		});
+	if (event.locals.user) {
+		const isStudent = event.locals.user.role === 'student';
+
+		if (url === '/login' && event.request.method === 'GET') {
+			return new Response(null, {
+				status: 303,
+				headers: { Location: isStudent ? '/meine-noten' : '/' }
+			});
+		}
+
+		if (isStudent) {
+			const isLogoutAction = url === '/login' && event.url.searchParams.has('/logout');
+			const allowedForStudent =
+				url.startsWith('/meine-noten') ||
+				url.startsWith('/logout') ||
+				isLogoutAction ||
+				(isPublic && !url.startsWith('/login'));
+
+			if (!allowedForStudent) {
+				if (url.startsWith('/api/')) {
+					return new Response(JSON.stringify({ error: 'Zugriff verweigert' }), {
+						status: 403,
+						headers: { 'Content-Type': 'application/json' }
+					});
+				}
+				return new Response(null, {
+					status: 303,
+					headers: { Location: '/meine-noten' }
+				});
+			}
+		} else if (url.startsWith('/meine-noten')) {
+			return new Response(null, {
+				status: 303,
+				headers: { Location: '/' }
+			});
+		}
 	}
 
 	return resolve(event);

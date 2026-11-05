@@ -32,7 +32,16 @@ export function validateSessionToken(token: string) {
 	const row = sqlite
 		.prepare(
 			`
-		SELECT s.id as session_id, s.expires_at, u.id as user_id, u.username, u.totp_enabled
+		SELECT
+			s.id as session_id,
+			s.expires_at,
+			u.id as user_id,
+			u.username,
+			u.totp_enabled,
+			u.role,
+			u.display_name,
+			u.is_active,
+			u.student_id
 		FROM sessions s
 		JOIN users u ON s.user_id = u.id
 		WHERE s.id = ?
@@ -45,6 +54,10 @@ export function validateSessionToken(token: string) {
 				user_id: string;
 				username: string;
 				totp_enabled: number;
+				role: 'admin' | 'teacher' | 'student';
+				display_name: string | null;
+				is_active: number;
+				student_id: string | null;
 		  }
 		| undefined;
 
@@ -52,7 +65,7 @@ export function validateSessionToken(token: string) {
 		return { session: null, user: null };
 	}
 
-	if (Date.now() >= row.expires_at) {
+	if (!row.is_active || Date.now() >= row.expires_at) {
 		db.delete(schema.sessions).where(eq(schema.sessions.id, sessionId)).run();
 		return { session: null, user: null };
 	}
@@ -69,12 +82,24 @@ export function validateSessionToken(token: string) {
 
 	return {
 		session: { id: row.session_id, expiresAt: new Date(row.expires_at) },
-		user: { id: row.user_id, username: row.username, totpEnabled: Boolean(row.totp_enabled) }
+		user: {
+			id: row.user_id,
+			username: row.username,
+			totpEnabled: Boolean(row.totp_enabled),
+			role: (row.role || 'teacher') as 'admin' | 'teacher' | 'student',
+			displayName: row.display_name ?? null,
+			isActive: Boolean(row.is_active),
+			studentId: row.student_id ?? null
+		}
 	};
 }
 
 export function invalidateSession(sessionId: string) {
 	db.delete(schema.sessions).where(eq(schema.sessions.id, sessionId)).run();
+}
+
+export function invalidateAllUserSessions(userId: string) {
+	db.delete(schema.sessions).where(eq(schema.sessions.userId, userId)).run();
 }
 
 export function generateTotpSecret(username: string) {

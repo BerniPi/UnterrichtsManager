@@ -5,28 +5,35 @@ import * as schema from '$lib/server/db/schema';
 import { eq } from 'drizzle-orm';
 import { hash, verify } from '@node-rs/argon2';
 import { generateTotpSecret, verifyTotpToken } from '$lib/server/auth';
+import { requireTeacher, requireAdmin } from '$lib/server/auth/access';
 import { seedDatabase } from '$lib/server/db/seed';
 import { gradingTemplateRepository } from '$lib/server/repositories/grading-template.repository';
 import { settingsRepository } from '$lib/server/repositories/settings.repository';
-import { validateScale, type GradingThreshold } from '$lib/services/grading';
+import { validateScale } from '$lib/services/grading';
 import { BgbbError, fetchBgbbClasses, getBgbbConfig, saveBgbbConfig } from '$lib/server/bgbb/client';
 
 export const load: PageServerLoad = async ({ locals }) => {
-	const user = locals.user!;
-	const settings = settingsRepository.getAll();
+	const user = requireTeacher(locals);
+	const isAdmin = user.role === 'admin';
+	const settings = settingsRepository.getAll(user.id);
 
 	const userRow = db.select().from(schema.users).where(eq(schema.users.id, user.id)).get()!;
 
 	const subCount = (
-		sqlite.prepare('SELECT COUNT(*) as count FROM push_subscriptions').get() as { count: number }
+		sqlite
+			.prepare('SELECT COUNT(*) as count FROM push_subscriptions WHERE user_id = ?')
+			.get(user.id) as { count: number }
 	).count;
 
-	const gradingTemplates = gradingTemplateRepository.getAll();
+	const gradingTemplates = gradingTemplateRepository.getAll(user.id);
 	// Der API-Key selbst geht nie an den Browser
-	const bgbb = getBgbbConfig();
+	const bgbb = isAdmin
+		? getBgbbConfig()
+		: { apiUrl: '', apiKey: '', fromEnv: false };
 
 	return {
 		username: user.username,
+		isAdmin,
 		totpEnabled: userRow.totpEnabled,
 		teacherName: settings.teacherName,
 		defaultReturnDays: settings.defaultReturnDays,
@@ -43,24 +50,29 @@ export const load: PageServerLoad = async ({ locals }) => {
 };
 
 export const actions: Actions = {
-	updateSettings: async ({ request }) => {
+	updateSettings: async ({ request, locals }) => {
+		const user = requireTeacher(locals);
 		const form = await request.formData();
 		const teacherName = form.get('teacherName')?.toString().trim() || '';
 		const defaultReturnDays = parseInt(form.get('defaultReturnDays')?.toString() || '7', 10);
 		const earlyWarningThreshold = parseFloat(form.get('earlyWarningThreshold')?.toString() || '4.5');
 		const emailSummaryEnabled = form.get('emailSummaryEnabled') ? true : false;
 
-		settingsRepository.updateAll({
-			teacherName,
-			defaultReturnDays,
-			earlyWarningThreshold,
-			emailSummaryEnabled
-		});
+		settingsRepository.updateAll(
+			{
+				teacherName,
+				defaultReturnDays,
+				earlyWarningThreshold,
+				emailSummaryEnabled
+			},
+			user.id
+		);
 
 		return { success: true, message: 'Einstellungen gespeichert!' };
 	},
 
-	updateBgbbSettings: async ({ request }) => {
+	updateBgbbSettings: async ({ request, locals }) => {
+		requireAdmin(locals);
 		if (getBgbbConfig().fromEnv) {
 			return fail(400, { bgbbError: 'BGBB Admin ist über Umgebungsvariablen eingerichtet und hier nicht änderbar.' });
 		}
@@ -76,7 +88,8 @@ export const actions: Actions = {
 		return { success: true, bgbbMessage: 'BGBB-Admin-Anbindung gespeichert.' };
 	},
 
-	testBgbbConnection: async () => {
+	testBgbbConnection: async ({ locals }) => {
+		requireAdmin(locals);
 		try {
 			const classes = await fetchBgbbClasses();
 			const students = classes.reduce((sum, c) => sum + c.studentCount, 0);
@@ -91,6 +104,7 @@ export const actions: Actions = {
 	},
 
 	changePassword: async ({ request, locals }) => {
+		const userLocals = requireTeacher(locals);
 		const form = await request.formData();
 		const currentPassword = form.get('currentPassword')?.toString();
 		const newPassword = form.get('newPassword')?.toString();
@@ -99,7 +113,7 @@ export const actions: Actions = {
 			return fail(400, { passwordError: 'Bitte aktuelles und neues Passwort eingeben.' });
 		}
 
-		const user = db.select().from(schema.users).where(eq(schema.users.id, locals.user!.id)).get()!;
+		const user = db.select().from(schema.users).where(eq(schema.users.id, userLocals.id)).get()!;
 		const valid = await verify(user.passwordHash, currentPassword);
 		if (!valid) {
 			return fail(400, { passwordError: 'Das aktuelle Passwort ist nicht korrekt.' });
@@ -115,10 +129,11 @@ export const actions: Actions = {
 	},
 
 	setupTotp: async ({ locals }) => {
-		const secret = generateTotpSecret(locals.user!.username);
+		const user = requireTeacher(locals);
+		const secret = generateTotpSecret(user.username);
 		db.update(schema.users)
 			.set({ totpSecret: secret.secret, totpEnabled: false })
-			.where(eq(schema.users.id, locals.user!.id))
+			.where(eq(schema.users.id, user.id))
 			.run();
 
 		return {
@@ -129,10 +144,11 @@ export const actions: Actions = {
 	},
 
 	enableTotp: async ({ request, locals }) => {
+		const userLocals = requireTeacher(locals);
 		const form = await request.formData();
 		const code = form.get('code')?.toString().trim();
 
-		const user = db.select().from(schema.users).where(eq(schema.users.id, locals.user!.id)).get()!;
+		const user = db.select().from(schema.users).where(eq(schema.users.id, userLocals.id)).get()!;
 		if (!user.totpSecret || !code) {
 			return fail(400, { totpError: 'Code erforderlich.' });
 		}
@@ -151,15 +167,17 @@ export const actions: Actions = {
 	},
 
 	disableTotp: async ({ locals }) => {
+		const user = requireTeacher(locals);
 		db.update(schema.users)
 			.set({ totpEnabled: false, totpSecret: null })
-			.where(eq(schema.users.id, locals.user!.id))
+			.where(eq(schema.users.id, user.id))
 			.run();
 
 		return { totpDisabled: true };
 	},
 
-	resetFictionalData: async () => {
+	resetFictionalData: async ({ locals }) => {
+		requireAdmin(locals);
 		if (process.env.NODE_ENV === 'production') {
 			return fail(403, { resetError: 'Das Zurücksetzen auf Testdaten ist in Produktionsumgebungen gesperrt.' });
 		}
@@ -167,7 +185,8 @@ export const actions: Actions = {
 		return { resetSuccess: 'Datenbank mit fiktiven Testdaten neu initialisiert!' };
 	},
 
-	saveTemplate: async ({ request }) => {
+	saveTemplate: async ({ request, locals }) => {
+		const user = requireTeacher(locals);
 		const form = await request.formData();
 		const id = form.get('id')?.toString();
 		const name = form.get('name')?.toString().trim();
@@ -193,31 +212,33 @@ export const actions: Actions = {
 		const scale = validation.normalizedScale;
 
 		if (id) {
-			gradingTemplateRepository.update(id, { name, description, scale, isDefault });
+			gradingTemplateRepository.update(id, { name, description, scale, isDefault }, user.id);
 			return { templateSuccess: `Vorlage „${name}“ erfolgreich aktualisiert!` };
 		} else {
-			gradingTemplateRepository.create({ name, description, scale, isDefault });
+			gradingTemplateRepository.create({ name, description, scale, isDefault }, user.id);
 			return { templateSuccess: `Neue Vorlage „${name}“ erfolgreich angelegt!` };
 		}
 	},
 
-	setDefaultTemplate: async ({ request }) => {
+	setDefaultTemplate: async ({ request, locals }) => {
+		const user = requireTeacher(locals);
 		const form = await request.formData();
 		const id = form.get('id')?.toString();
 		if (!id) return fail(400, { templateError: 'Ungültige Vorlagen-ID.' });
-		gradingTemplateRepository.setDefault(id);
+		gradingTemplateRepository.setDefault(id, user.id);
 		return { templateSuccess: 'Standard-Vorlage erfolgreich geändert!' };
 	},
 
-	deleteTemplate: async ({ request }) => {
+	deleteTemplate: async ({ request, locals }) => {
+		const user = requireTeacher(locals);
 		const form = await request.formData();
 		const id = form.get('id')?.toString();
 		if (!id) return fail(400, { templateError: 'Ungültige Vorlagen-ID.' });
-		const all = gradingTemplateRepository.getAll();
+		const all = gradingTemplateRepository.getAll(user.id);
 		if (all.length <= 1) {
 			return fail(400, { templateError: 'Mindestens eine Vorlage muss im System verbleiben.' });
 		}
-		gradingTemplateRepository.delete(id);
+		gradingTemplateRepository.delete(id, user.id);
 		return { templateSuccess: 'Vorlage erfolgreich gelöscht!' };
 	}
 };

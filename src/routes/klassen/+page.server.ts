@@ -7,16 +7,19 @@ import { fail } from '@sveltejs/kit';
 import { assignAlphabeticalCatalogNumbers, type RawStudentImport } from '$lib/services/reconciliation';
 import { studentRepository } from '$lib/server/repositories/student.repository';
 import { BgbbError, fetchBgbbClasses, fetchBgbbRoster, getBgbbConfig } from '$lib/server/bgbb/client';
+import { requireTeacher, requireAdmin } from '$lib/server/auth/access';
 
-export const load: PageServerLoad = async ({ parent }) => {
+export const load: PageServerLoad = async ({ parent, locals }) => {
+	const user = requireTeacher(locals);
+	const isAdmin = user.role === 'admin';
 	const layoutData = await parent();
 	const sy = layoutData.currentSchoolYear;
 
-	const bgbb = getBgbbConfig();
+	const bgbb = isAdmin ? getBgbbConfig() : { apiUrl: '', apiKey: '', fromEnv: false };
 	const bgbbConfigured = Boolean(bgbb.apiUrl && bgbb.apiKey);
 
 	if (!sy) {
-		return { classes: [], activeSchoolYear: null, bgbbConfigured };
+		return { classes: [], activeSchoolYear: null, bgbbConfigured, isAdmin };
 	}
 
 	const classesWithStudentCounts = sqlite
@@ -46,12 +49,14 @@ export const load: PageServerLoad = async ({ parent }) => {
 	return {
 		activeSchoolYear: sy,
 		classes: classesWithStudentCounts,
-		bgbbConfigured
+		bgbbConfigured,
+		isAdmin
 	};
 };
 
 export const actions: Actions = {
 	createClass: async ({ request, locals }) => {
+		requireAdmin(locals);
 		const form = await request.formData();
 		const name = form.get('name')?.toString().trim();
 		const room = form.get('room')?.toString().trim() || null;
@@ -73,7 +78,8 @@ export const actions: Actions = {
 		return { success: true };
 	},
 
-	parseUpload: async ({ request }) => {
+	parseUpload: async ({ request, locals }) => {
+		requireAdmin(locals);
 		const form = await request.formData();
 		const file = form.get('file') as File;
 		const classId = form.get('classId')?.toString();
@@ -118,7 +124,8 @@ export const actions: Actions = {
 		};
 	},
 
-	commitImport: async ({ request }) => {
+	commitImport: async ({ request, locals }) => {
+		requireAdmin(locals);
 		const form = await request.formData();
 		const classId = form.get('classId')?.toString();
 		const rawDataJson = form.get('studentsJson')?.toString();
@@ -146,7 +153,8 @@ export const actions: Actions = {
 
 	// --- Import aus BGBB Admin ---
 
-	bgbbLoadClasses: async () => {
+	bgbbLoadClasses: async ({ locals }) => {
+		requireAdmin(locals);
 		try {
 			const bgbbClasses = await fetchBgbbClasses();
 			const sy = getCurrentSchoolYear();
@@ -162,7 +170,8 @@ export const actions: Actions = {
 		}
 	},
 
-	bgbbPreview: async ({ request }) => {
+	bgbbPreview: async ({ request, locals }) => {
+		requireAdmin(locals);
 		const form = await request.formData();
 		const klassen = form.getAll('klassen').map(String).filter(Boolean);
 		const sy = getCurrentSchoolYear();
@@ -196,7 +205,8 @@ export const actions: Actions = {
 		}
 	},
 
-	bgbbCommit: async ({ request }) => {
+	bgbbCommit: async ({ request, locals }) => {
+		requireAdmin(locals);
 		const form = await request.formData();
 		const klassen = form.getAll('klassen').map(String).filter(Boolean);
 		const sy = getCurrentSchoolYear();

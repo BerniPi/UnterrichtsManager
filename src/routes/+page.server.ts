@@ -1,19 +1,25 @@
 import type { PageServerLoad, Actions } from './$types';
 import { db, sqlite } from '$lib/server/db';
 import * as schema from '$lib/server/db/schema';
-import { eq, and } from 'drizzle-orm';
-import { getOverdueItems, getAssessmentEarlyWarningReminders, runReminderCheck } from '$lib/server/reminders/dispatcher';
+import { eq } from 'drizzle-orm';
+import {
+	getOverdueItems,
+	getAssessmentEarlyWarningReminders,
+	runReminderCheck
+} from '$lib/server/reminders/dispatcher';
 import { calculateSnoozeDate, isDeadlineApproaching } from '$lib/services/reminders';
 import { getIsoWeekAndYear } from '$lib/services/dates';
+import { requireTeacher, guardCourseActions } from '$lib/server/auth/access';
 import crypto from 'node:crypto';
 
-export const load: PageServerLoad = async ({ parent }) => {
+export const load: PageServerLoad = async ({ parent, locals }) => {
+	const user = requireTeacher(locals);
 	const layoutData = await parent();
 	const sy = layoutData.currentSchoolYear;
 
 	const todayStr = new Date().toISOString().slice(0, 10);
-	const overdueSummary = getOverdueItems(todayStr);
-	const assessmentEarlyWarningReminders = getAssessmentEarlyWarningReminders(todayStr);
+	const overdueSummary = getOverdueItems(todayStr, user.id);
+	const assessmentEarlyWarningReminders = getAssessmentEarlyWarningReminders(todayStr, user.id);
 
 	// Calculate current calendar week (ISO 8601)
 	const { week: weekNumber, year } = getIsoWeekAndYear();
@@ -83,9 +89,15 @@ export const load: PageServerLoad = async ({ parent }) => {
 		: [];
 
 	// Pre-Notenschluss warning check: are there open early warnings near Notenschluss?
-	const isNearNotenschluss = deadlines.some((d) => d.title.includes('Notenschluss') && d.approaching.isApproaching);
+	const isNearNotenschluss = deadlines.some(
+		(d) => d.title.includes('Notenschluss') && d.approaching.isApproaching
+	);
 	const openEarlyWarningsCount = (
-		sqlite.prepare('SELECT COUNT(*) as count FROM early_warnings WHERE is_signed = 0').get() as any
+		sqlite
+			.prepare(
+				'SELECT COUNT(*) as count FROM early_warnings ew JOIN courses c ON ew.course_id = c.id WHERE ew.is_signed = 0 AND c.teacher_id = ?'
+			)
+			.get(user.id) as any
 	).count;
 
 	return {
@@ -99,7 +111,7 @@ export const load: PageServerLoad = async ({ parent }) => {
 	};
 };
 
-export const actions: Actions = {
+export const actions: Actions = guardCourseActions({
 	markReturnSigned: async ({ request }) => {
 		const form = await request.formData();
 		const returnId = form.get('returnId')?.toString();
@@ -226,4 +238,4 @@ export const actions: Actions = {
 		const result = await runReminderCheck();
 		return { success: true, ...result };
 	}
-};
+});

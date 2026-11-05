@@ -8,6 +8,10 @@ declare global {
 				id: string;
 				username: string;
 				totpEnabled: boolean;
+				role: 'admin' | 'teacher' | 'student';
+				displayName: string | null;
+				isActive: boolean;
+				studentId: string | null;
 			} | null;
 			session: {
 				id: string;

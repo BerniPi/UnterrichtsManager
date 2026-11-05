@@ -1,6 +1,6 @@
 import { db, sqlite } from '../db';
 import * as schema from '../db/schema';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import crypto from 'node:crypto';
 
 export interface StudentNote {
@@ -8,6 +8,7 @@ export interface StudentNote {
 	studentId: string;
 	courseId: string | null;
 	courseSubject: string | null;
+	authorId: string | null;
 	date: string;
 	category: 'elterngespraech' | 'auffaelligkeit' | 'foerderung' | 'allgemein';
 	title: string;
@@ -15,7 +16,12 @@ export interface StudentNote {
 }
 
 export const noteRepository = {
-	getByStudent(studentId: string): StudentNote[] {
+	getByStudent(studentId: string, authorId?: string): StudentNote[] {
+		const whereClause = authorId
+			? 'WHERE n.student_id = ? AND n.author_id = ?'
+			: 'WHERE n.student_id = ?';
+		const args = authorId ? [studentId, authorId] : [studentId];
+
 		return sqlite
 			.prepare(
 				`
@@ -24,22 +30,24 @@ export const noteRepository = {
 				n.student_id as studentId,
 				n.course_id as courseId,
 				c.subject as courseSubject,
+				n.author_id as authorId,
 				n.date,
 				n.category,
 				n.title,
 				n.content
 			FROM notes n
 			LEFT JOIN courses c ON n.course_id = c.id
-			WHERE n.student_id = ?
+			${whereClause}
 			ORDER BY n.date DESC
 		`
 			)
-			.all(studentId) as StudentNote[];
+			.all(...args) as StudentNote[];
 	},
 
 	create(data: {
 		studentId: string;
 		courseId?: string | null;
+		authorId?: string | null;
 		date: string;
 		category: 'elterngespraech' | 'auffaelligkeit' | 'foerderung' | 'allgemein';
 		title: string;
@@ -51,6 +59,7 @@ export const noteRepository = {
 				id,
 				studentId: data.studentId,
 				courseId: data.courseId || null,
+				authorId: data.authorId || null,
 				date: data.date,
 				category: data.category,
 				title: data.title,
@@ -60,7 +69,13 @@ export const noteRepository = {
 		return id;
 	},
 
-	delete(id: string): void {
-		db.delete(schema.notes).where(eq(schema.notes.id, id)).run();
+	delete(id: string, authorId?: string): void {
+		if (authorId) {
+			db.delete(schema.notes)
+				.where(and(eq(schema.notes.id, id), eq(schema.notes.authorId, authorId)))
+				.run();
+		} else {
+			db.delete(schema.notes).where(eq(schema.notes.id, id)).run();
+		}
 	}
 };

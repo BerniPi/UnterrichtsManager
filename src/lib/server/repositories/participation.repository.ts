@@ -45,14 +45,30 @@ export const participationRepository = {
 		};
 	},
 
-	getHistoryForStudent(studentId: string, courseId?: string): ParticipationRecord[] {
+	getHistoryForStudent(
+		studentId: string,
+		courseId?: string,
+		teacherId?: string
+	): ParticipationRecord[] {
+		const conditions = ['pe.student_id = ?'];
+		const args: string[] = [studentId];
+
+		if (courseId) {
+			conditions.push('pe.course_id = ?');
+			args.push(courseId);
+		}
+		if (teacherId) {
+			conditions.push('c.teacher_id = ?');
+			args.push(teacherId);
+		}
+
 		const query = `
-			SELECT id, course_id as courseId, student_id as studentId, date, week_number as weekNumber, year, value, comment
-			FROM participation_entries
-			WHERE student_id = ? ${courseId ? 'AND course_id = ?' : ''}
-			ORDER BY date DESC, week_number DESC
+			SELECT pe.id, pe.course_id as courseId, pe.student_id as studentId, pe.date, pe.week_number as weekNumber, pe.year, pe.value, pe.comment
+			FROM participation_entries pe
+			JOIN courses c ON pe.course_id = c.id
+			WHERE ${conditions.join(' AND ')}
+			ORDER BY pe.date DESC, pe.week_number DESC
 		`;
-		const args = courseId ? [studentId, courseId] : [studentId];
 		return sqlite.prepare(query).all(...args) as ParticipationRecord[];
 	},
 

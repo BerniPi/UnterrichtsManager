@@ -5,8 +5,10 @@ import * as schema from '$lib/server/db/schema';
 import { eq } from 'drizzle-orm';
 import crypto from 'node:crypto';
 import { studentRepository } from '$lib/server/repositories/student.repository';
+import { requireTeacher, requireAdmin } from '$lib/server/auth/access';
 
-export const load: PageServerLoad = async ({ params }) => {
+export const load: PageServerLoad = async ({ params, locals }) => {
+	const user = requireTeacher(locals);
 	const classId = params.id;
 
 	const cls = db.select().from(schema.classes).where(eq(schema.classes.id, classId)).get();
@@ -34,22 +36,26 @@ export const load: PageServerLoad = async ({ params }) => {
 	}>;
 
 	const courses = sqlite
-		.prepare('SELECT id, subject FROM courses WHERE class_id = ?')
-		.all(classId) as Array<{ id: string; subject: string }>;
+		.prepare('SELECT id, subject FROM courses WHERE class_id = ? AND teacher_id = ? ORDER BY subject ASC')
+		.all(classId, user.id) as Array<{ id: string; subject: string }>;
 
 	return {
 		cls,
 		students,
-		courses
+		courses,
+		isAdmin: user.role === 'admin'
 	};
 };
 
 export const actions: Actions = {
-	addStudent: async ({ request, params }) => {
+	addStudent: async ({ request, params, locals }) => {
+		requireAdmin(locals);
 		const form = await request.formData();
 		const firstName = form.get('firstName')?.toString().trim();
 		const lastName = form.get('lastName')?.toString().trim();
-		const catalogNumber = form.get('catalogNumber') ? parseInt(form.get('catalogNumber')!.toString(), 10) : null;
+		const catalogNumber = form.get('catalogNumber')
+			? parseInt(form.get('catalogNumber')!.toString(), 10)
+			: null;
 		const webuntisId = form.get('webuntisId')?.toString().trim() || null;
 
 		if (!firstName || !lastName) {
@@ -71,7 +77,8 @@ export const actions: Actions = {
 		return { success: true };
 	},
 
-	toggleStatus: async ({ request }) => {
+	toggleStatus: async ({ request, locals }) => {
+		requireAdmin(locals);
 		const form = await request.formData();
 		const studentId = form.get('studentId')?.toString();
 		const currentStatus = form.get('currentStatus')?.toString();
@@ -87,7 +94,8 @@ export const actions: Actions = {
 		return { success: true };
 	},
 
-	renumberAlphabetically: async ({ params }) => {
+	renumberAlphabetically: async ({ params, locals }) => {
+		requireAdmin(locals);
 		const classId = params.id;
 		const students = sqlite
 			.prepare(
@@ -111,7 +119,8 @@ export const actions: Actions = {
 		return { success: true };
 	},
 
-	updateStudent: async ({ request }) => {
+	updateStudent: async ({ request, locals }) => {
+		requireAdmin(locals);
 		const form = await request.formData();
 		const studentId = form.get('studentId')?.toString();
 		const firstName = form.get('firstName')?.toString().trim();

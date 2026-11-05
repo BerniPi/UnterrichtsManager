@@ -18,6 +18,7 @@
 	interface Props {
 		data: {
 			username: string;
+			isAdmin?: boolean;
 			totpEnabled: boolean;
 			teacherName: string;
 			defaultReturnDays: number;
@@ -184,87 +185,89 @@
 		</form>
 	</div>
 
-	<!-- Section: Anbindung BGBB Admin (Schülerimport) -->
-	<div class="p-6 bg-slate-900 border border-slate-800 rounded-2xl shadow-sm space-y-4">
-		<h2 class="text-base font-bold text-white flex items-center space-x-2">
-			<Link2 class="w-5 h-5 text-blue-400" />
-			<span>Anbindung BGBB Admin (Schülerimport)</span>
-		</h2>
+	{#if data.isAdmin}
+		<!-- Section: Anbindung BGBB Admin (Schülerimport) -->
+		<div class="p-6 bg-slate-900 border border-slate-800 rounded-2xl shadow-sm space-y-4">
+			<h2 class="text-base font-bold text-white flex items-center space-x-2">
+				<Link2 class="w-5 h-5 text-blue-400" />
+				<span>Anbindung BGBB Admin (Schülerimport)</span>
+			</h2>
 
-		<p class="text-xs text-slate-400">
-			Schülerlisten können unter „Klassen“ direkt aus BGBB Admin übernommen werden. Dafür in BGBB Admin einen API-Key mit
-			Leserecht („read“) anlegen und hier eintragen. Übernommen werden nur Vorname, Familienname und SchKz.
-		</p>
-
-		{#if form?.bgbbError}
-			<div class="p-3 bg-red-950/90 border border-red-800 text-red-200 text-xs rounded-xl flex items-center space-x-2">
-				<AlertTriangle class="w-4 h-4 text-red-400 shrink-0" />
-				<span>{form.bgbbError}</span>
-			</div>
-		{:else if form?.bgbbMessage}
-			<div class="p-3 bg-emerald-950/90 border border-emerald-800 text-emerald-200 text-xs rounded-xl flex items-center space-x-2">
-				<CheckCircle2 class="w-4 h-4 text-emerald-400 shrink-0" />
-				<span>{form.bgbbMessage}</span>
-			</div>
-		{/if}
-
-		{#if data.bgbb.fromEnv}
-			<p class="text-xs text-slate-300">
-				Eingerichtet über Umgebungsvariablen (<code>BGBB_API_URL</code>, <code>BGBB_API_KEY</code>): <strong>{data.bgbb.apiUrl}</strong>
+			<p class="text-xs text-slate-400">
+				Schülerlisten können unter „Klassen“ direkt aus BGBB Admin übernommen werden. Dafür in BGBB Admin einen API-Key mit
+				Leserecht („read“) anlegen und hier eintragen. Übernommen werden nur Vorname, Familienname und SchKz.
 			</p>
-		{:else}
-			<form action="?/updateBgbbSettings" method="POST" use:enhance={() => async ({ update }) => update({ reset: false })} class="space-y-4">
-				<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-					<div>
-						<label for="bgbbUrl" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
-							Adresse von BGBB Admin
-						</label>
-						<input
-							id="bgbbUrl"
-							type="url"
-							name="bgbbApiUrl"
-							value={data.bgbb.apiUrl}
-							placeholder="https://admin.example.at"
-							class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white text-sm focus:ring-2 focus:ring-blue-500"
-						/>
-					</div>
-					<div>
-						<label for="bgbbKey" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
-							API-Key
-						</label>
-						<input
-							id="bgbbKey"
-							type="password"
-							name="bgbbApiKey"
-							autocomplete="off"
-							placeholder={data.bgbb.apiKeySet ? 'gespeichert – leer lassen zum Beibehalten' : 'API-Key aus BGBB Admin'}
-							class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white text-sm focus:ring-2 focus:ring-blue-500"
-						/>
-					</div>
-				</div>
 
-				<div class="flex justify-end">
+			{#if form?.bgbbError}
+				<div class="p-3 bg-red-950/90 border border-red-800 text-red-200 text-xs rounded-xl flex items-center space-x-2">
+					<AlertTriangle class="w-4 h-4 text-red-400 shrink-0" />
+					<span>{form.bgbbError}</span>
+				</div>
+			{:else if form?.bgbbMessage}
+				<div class="p-3 bg-emerald-950/90 border border-emerald-800 text-emerald-200 text-xs rounded-xl flex items-center space-x-2">
+					<CheckCircle2 class="w-4 h-4 text-emerald-400 shrink-0" />
+					<span>{form.bgbbMessage}</span>
+				</div>
+			{/if}
+
+			{#if data.bgbb.fromEnv}
+				<p class="text-xs text-slate-300">
+					Eingerichtet über Umgebungsvariablen (<code>BGBB_API_URL</code>, <code>BGBB_API_KEY</code>): <strong>{data.bgbb.apiUrl}</strong>
+				</p>
+			{:else}
+				<form action="?/updateBgbbSettings" method="POST" use:enhance={() => async ({ update }) => update({ reset: false })} class="space-y-4">
+					<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+						<div>
+							<label for="bgbbUrl" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
+								Adresse von BGBB Admin
+							</label>
+							<input
+								id="bgbbUrl"
+								type="url"
+								name="bgbbApiUrl"
+								value={data.bgbb.apiUrl}
+								placeholder="https://admin.example.at"
+								class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white text-sm focus:ring-2 focus:ring-blue-500"
+							/>
+						</div>
+						<div>
+							<label for="bgbbKey" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
+								API-Key
+							</label>
+							<input
+								id="bgbbKey"
+								type="password"
+								name="bgbbApiKey"
+								autocomplete="off"
+								placeholder={data.bgbb.apiKeySet ? 'gespeichert – leer lassen zum Beibehalten' : 'API-Key aus BGBB Admin'}
+								class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white text-sm focus:ring-2 focus:ring-blue-500"
+							/>
+						</div>
+					</div>
+
+					<div class="flex justify-end">
+						<button
+							type="submit"
+							class="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs shadow-md shadow-blue-500/20 active:scale-95 transition"
+						>
+							Anbindung speichern
+						</button>
+					</div>
+				</form>
+			{/if}
+
+			{#if data.bgbb.apiUrl && data.bgbb.apiKeySet}
+				<form action="?/testBgbbConnection" method="POST" use:enhance class="flex justify-end">
 					<button
 						type="submit"
-						class="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs shadow-md shadow-blue-500/20 active:scale-95 transition"
+						class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition"
 					>
-						Anbindung speichern
+						Verbindung testen
 					</button>
-				</div>
-			</form>
-		{/if}
-
-		{#if data.bgbb.apiUrl && data.bgbb.apiKeySet}
-			<form action="?/testBgbbConnection" method="POST" use:enhance class="flex justify-end">
-				<button
-					type="submit"
-					class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition"
-				>
-					Verbindung testen
-				</button>
-			</form>
-		{/if}
-	</div>
+				</form>
+			{/if}
+		</div>
+	{/if}
 
 	<!-- Section 2: Notenschlüssel-Vorlagen (Grading Scale Templates Editor) -->
 	<GradingTemplatesManager templates={data.gradingTemplates} {form} />
@@ -406,86 +409,88 @@
 		</div>
 	</div>
 
-	<!-- Section 4: Full Database Backup & Restore -->
-	<div class="p-6 bg-slate-900 border border-slate-800 rounded-2xl shadow-sm space-y-4">
-		<h2 class="text-base font-bold text-white flex items-center space-x-2">
-			<Database class="w-5 h-5 text-purple-400" />
-			<span>Datenbank-Sicherung & Wiederherstellung (SQLite)</span>
-		</h2>
+	{#if data.isAdmin}
+		<!-- Section 4: Full Database Backup & Restore -->
+		<div class="p-6 bg-slate-900 border border-slate-800 rounded-2xl shadow-sm space-y-4">
+			<h2 class="text-base font-bold text-white flex items-center space-x-2">
+				<Database class="w-5 h-5 text-purple-400" />
+				<span>Datenbank-Sicherung & Wiederherstellung (SQLite)</span>
+			</h2>
 
-		<p class="text-xs text-slate-400">
-			Da alle Noten, Schüler und Aufzeichnungen in einer einzigen SQLite-Datei gespeichert sind, ist das Backup 100% vollständig und portabel.
-		</p>
-
-		<div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-			<!-- Backup Download -->
-			<div class="p-4 bg-slate-950 rounded-xl border border-slate-800 flex flex-col justify-between space-y-3">
-				<div>
-					<h3 class="font-bold text-white text-sm">Vollständiges Backup herunterladen</h3>
-					<p class="text-xs text-slate-400 mt-1">
-						Lädt die aktuelle SQLite-Datenbankdatei direkt auf deinen Rechner herunter.
-					</p>
-				</div>
-				<a
-					href="/api/backup/download"
-					download
-					class="w-full py-2.5 px-4 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold flex items-center justify-center space-x-2 shadow-md shadow-purple-500/20 active:scale-95 transition"
-				>
-					<Download class="w-4 h-4" />
-					<span>Datenbank-Snapshot (.sqlite)</span>
-				</a>
-			</div>
-
-			<!-- Backup Restore Upload -->
-			<div class="p-4 bg-slate-950 rounded-xl border border-slate-800 flex flex-col justify-between space-y-3">
-				<div>
-					<h3 class="font-bold text-white text-sm">Backup wiederherstellen</h3>
-					<p class="text-xs text-slate-400 mt-1">
-						Spielt eine vorhandene SQLite-Sicherungsdatei ein.
-					</p>
-				</div>
-
-				<form
-					action="/api/backup/upload"
-					method="POST"
-					enctype="multipart/form-data"
-					class="flex items-center space-x-2"
-				>
-					<input
-						type="file"
-						name="backupFile"
-						required
-						accept=".sqlite,.db"
-						class="text-xs text-slate-400 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-slate-800 file:text-white"
-					/>
-					<button
-						type="submit"
-						class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 shrink-0"
-					>
-						Einspielen
-					</button>
-				</form>
-			</div>
-		</div>
-	</div>
-
-	<!-- Section 5: Fictional Demo Data Reset -->
-	<div class="p-6 bg-slate-900 border border-slate-800 rounded-2xl shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-		<div>
-			<h2 class="text-sm font-bold text-white">Testdaten zurücksetzen (Fiktive Schüler)</h2>
-			<p class="text-xs text-slate-400 mt-0.5">
-				Setzt die Datenbank auf die fiktiven Testdaten (Max Mustermann, Sophie Weber etc.) zurück.
+			<p class="text-xs text-slate-400">
+				Da alle Noten, Schüler und Aufzeichnungen in einer einzigen SQLite-Datei gespeichert sind, ist das Backup 100% vollständig und portabel.
 			</p>
+
+			<div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+				<!-- Backup Download -->
+				<div class="p-4 bg-slate-950 rounded-xl border border-slate-800 flex flex-col justify-between space-y-3">
+					<div>
+						<h3 class="font-bold text-white text-sm">Vollständiges Backup herunterladen</h3>
+						<p class="text-xs text-slate-400 mt-1">
+							Lädt die aktuelle SQLite-Datenbankdatei direkt auf deinen Rechner herunter.
+						</p>
+					</div>
+					<a
+						href="/api/backup/download"
+						download
+						class="w-full py-2.5 px-4 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold flex items-center justify-center space-x-2 shadow-md shadow-purple-500/20 active:scale-95 transition"
+					>
+						<Download class="w-4 h-4" />
+						<span>Datenbank-Snapshot (.sqlite)</span>
+					</a>
+				</div>
+
+				<!-- Backup Restore Upload -->
+				<div class="p-4 bg-slate-950 rounded-xl border border-slate-800 flex flex-col justify-between space-y-3">
+					<div>
+						<h3 class="font-bold text-white text-sm">Backup wiederherstellen</h3>
+						<p class="text-xs text-slate-400 mt-1">
+							Spielt eine vorhandene SQLite-Sicherungsdatei ein.
+						</p>
+					</div>
+
+					<form
+						action="/api/backup/upload"
+						method="POST"
+						enctype="multipart/form-data"
+						class="flex items-center space-x-2"
+					>
+						<input
+							type="file"
+							name="backupFile"
+							required
+							accept=".sqlite,.db"
+							class="text-xs text-slate-400 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-slate-800 file:text-white"
+						/>
+						<button
+							type="submit"
+							class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 shrink-0"
+						>
+							Einspielen
+						</button>
+					</form>
+				</div>
+			</div>
 		</div>
 
-		<form action="?/resetFictionalData" method="POST" use:enhance>
-			<button
-				type="submit"
-				class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-400 text-xs font-semibold border border-slate-700 flex items-center space-x-1.5 transition"
-			>
-				<RotateCcw class="w-4 h-4" />
-				<span>Auf Testdaten zurücksetzen</span>
-			</button>
-		</form>
-	</div>
+		<!-- Section 5: Fictional Demo Data Reset -->
+		<div class="p-6 bg-slate-900 border border-slate-800 rounded-2xl shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+			<div>
+				<h2 class="text-sm font-bold text-white">Testdaten zurücksetzen (Fiktive Schüler)</h2>
+				<p class="text-xs text-slate-400 mt-0.5">
+					Setzt die Datenbank auf die fiktiven Testdaten (Max Mustermann, Sophie Weber etc.) zurück.
+				</p>
+			</div>
+
+			<form action="?/resetFictionalData" method="POST" use:enhance>
+				<button
+					type="submit"
+					class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-400 text-xs font-semibold border border-slate-700 flex items-center space-x-1.5 transition"
+				>
+					<RotateCcw class="w-4 h-4" />
+					<span>Auf Testdaten zurücksetzen</span>
+				</button>
+			</form>
+		</div>
+	{/if}
 </div>
