@@ -324,16 +324,19 @@
 					<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 						<div>
 							<label for="entraTenant" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
-								Tenant-ID (Mandant)
+								Tenant-ID (Mandant-GUID)
 							</label>
 							<input
 								id="entraTenant"
 								name="tenantId"
 								type="text"
 								value={data.entra.tenantId}
-								placeholder="z.B. UUID oder bgblumenstrasse.at"
+								placeholder="z. B. 00000000-0000-0000-0000-000000000000"
 								class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white text-xs font-mono"
 							/>
+							<p class="text-[11px] text-slate-400 mt-1">
+								Verzeichnis-ID (GUID aus dem Azure / Entra ID Portal, keine Domain).
+							</p>
 						</div>
 
 						<div>

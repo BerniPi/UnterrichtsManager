@@ -276,6 +276,26 @@ export const actions: Actions = {
 			});
 		}
 
+		if (tenantId) {
+			if (
+				tenantId.toLowerCase() === 'common' ||
+				tenantId.toLowerCase() === 'organizations' ||
+				tenantId.toLowerCase() === 'consumers'
+			) {
+				return fail(400, {
+					entraError:
+						'Multi-Tenant Mandanten („common“, „organizations“, „consumers“) sind nicht erlaubt. Bitte die konkrete Mandant-GUID der Schule eintragen.'
+				});
+			}
+			const guidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+			if (!guidRegex.test(tenantId)) {
+				return fail(400, {
+					entraError:
+						'Die Tenant-ID muss eine gültige GUID (Verzeichnis-ID) aus dem Azure/Entra-Portal sein (z. B. 00000000-0000-0000-0000-000000000000), keine Domain.'
+				});
+			}
+		}
+
 		saveEntraConfig(tenantId, clientId, clientSecret);
 		return { entraUpdated: true };
 	}

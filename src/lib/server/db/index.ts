@@ -332,12 +332,94 @@ export function initDb() {
 	} catch (e) {}
 
 	try {
-		sqlite.exec(`ALTER TABLE courses ADD COLUMN teacher_id TEXT REFERENCES users(id) ON DELETE CASCADE;`);
+		sqlite.exec(`ALTER TABLE courses ADD COLUMN teacher_id TEXT REFERENCES users(id) ON DELETE SET NULL;`);
 	} catch (e) {}
 
 	try {
-		sqlite.exec(`ALTER TABLE notes ADD COLUMN author_id TEXT REFERENCES users(id) ON DELETE CASCADE;`);
+		sqlite.exec(`ALTER TABLE notes ADD COLUMN author_id TEXT REFERENCES users(id) ON DELETE SET NULL;`);
 	} catch (e) {}
+
+	// Migrate existing courses table if teacher_id is ON DELETE CASCADE
+	try {
+		const coursesFk = sqlite.prepare("PRAGMA foreign_key_list(courses)").all() as Array<{
+			from: string;
+			table: string;
+			on_delete: string;
+		}>;
+		const teacherFk = coursesFk.find((f) => f.from === 'teacher_id' && f.table === 'users');
+		if (teacherFk && teacherFk.on_delete.toUpperCase() === 'CASCADE') {
+			sqlite.pragma('foreign_keys = OFF');
+			sqlite.exec(`
+				BEGIN TRANSACTION;
+				CREATE TABLE courses_new (
+					id TEXT PRIMARY KEY,
+					class_id TEXT NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+					school_year_id TEXT NOT NULL REFERENCES school_years(id) ON DELETE CASCADE,
+					subject TEXT NOT NULL,
+					weight_schularbeiten REAL NOT NULL DEFAULT 40,
+					weight_tests REAL NOT NULL DEFAULT 20,
+					weight_participation REAL NOT NULL DEFAULT 25,
+					weight_observations REAL NOT NULL DEFAULT 10,
+					weight_homework REAL NOT NULL DEFAULT 5,
+					teacher_id TEXT REFERENCES users(id) ON DELETE SET NULL
+				);
+				INSERT INTO courses_new (
+					id, class_id, school_year_id, subject,
+					weight_schularbeiten, weight_tests, weight_participation,
+					weight_observations, weight_homework, teacher_id
+				)
+				SELECT
+					id, class_id, school_year_id, subject,
+					weight_schularbeiten, weight_tests, weight_participation,
+					weight_observations, weight_homework, teacher_id
+				FROM courses;
+				DROP TABLE courses;
+				ALTER TABLE courses_new RENAME TO courses;
+				CREATE INDEX IF NOT EXISTS idx_courses_teacher ON courses(teacher_id);
+				COMMIT;
+			`);
+			sqlite.pragma('foreign_keys = ON');
+		}
+	} catch (err) {
+		console.error('[DB] Migration courses ON DELETE SET NULL fehlgeschlagen:', err);
+		sqlite.pragma('foreign_keys = ON');
+	}
+
+	// Migrate existing notes table if author_id is ON DELETE CASCADE
+	try {
+		const notesFk = sqlite.prepare("PRAGMA foreign_key_list(notes)").all() as Array<{
+			from: string;
+			table: string;
+			on_delete: string;
+		}>;
+		const authorFk = notesFk.find((f) => f.from === 'author_id' && f.table === 'users');
+		if (authorFk && authorFk.on_delete.toUpperCase() === 'CASCADE') {
+			sqlite.pragma('foreign_keys = OFF');
+			sqlite.exec(`
+				BEGIN TRANSACTION;
+				CREATE TABLE notes_new (
+					id TEXT PRIMARY KEY,
+					student_id TEXT NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+					course_id TEXT REFERENCES courses(id) ON DELETE SET NULL,
+					date TEXT NOT NULL,
+					category TEXT NOT NULL,
+					title TEXT NOT NULL,
+					content TEXT NOT NULL,
+					author_id TEXT REFERENCES users(id) ON DELETE SET NULL
+				);
+				INSERT INTO notes_new (id, student_id, course_id, date, category, title, content, author_id)
+				SELECT id, student_id, course_id, date, category, title, content, author_id FROM notes;
+				DROP TABLE notes;
+				ALTER TABLE notes_new RENAME TO notes;
+				CREATE INDEX IF NOT EXISTS idx_notes_author ON notes(author_id);
+				COMMIT;
+			`);
+			sqlite.pragma('foreign_keys = ON');
+		}
+	} catch (err) {
+		console.error('[DB] Migration notes ON DELETE SET NULL fehlgeschlagen:', err);
+		sqlite.pragma('foreign_keys = ON');
+	}
 
 	try {
 		sqlite.exec(`ALTER TABLE push_subscriptions ADD COLUMN user_id TEXT REFERENCES users(id) ON DELETE CASCADE;`);

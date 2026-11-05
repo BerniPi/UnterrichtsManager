@@ -80,7 +80,7 @@ VAPID-Keys werden automatisch erzeugt und in `settings` gespeichert (`vapid_publ
 ### Microsoft 365 / Entra ID Single Sign-On (SSO)
 - **Aktivierung:** aktiv, sobald `tenantId`, `clientId` und `clientSecret` konfiguriert sind (über `.env` oder `/einstellungen`).
 - **Sicherheitsanforderungen:**
-  - Multi-Tenant `common` ist strikt verboten; es wird immer die exakte Schul-Tenant-ID im Token geprüft (`claims.tid === tenantId`).
+  - Multi-Tenant `common` ist strikt verboten; es wird immer die exakte Schul-Tenant-ID im Token geprüft (`claims.tid === tenantId`). Die Tenant-ID muss eine konkrete GUID aus dem Azure-Portal sein (keine Domain).
   - Als Identität werden nur verifizierte Organisations-Attribute (`preferred_username` oder `upn`) akzeptiert.
 - **Endpunkte:**
   - `GET /auth/microsoft`: Erzeugt PKCE-Challenge, Nonce und State, legt ein kurzlebiges signiertes Cookie `m365_flow` ab und leitet zu Microsoft um (`openid profile email`, `prompt=select_account`).
@@ -151,7 +151,7 @@ Tab-IDs der Kursseite: `noten`, `hausuebungen`, `tests`, `beobachtungen` (Hauptt
 ## Datenmodell
 
 IDs sind `TEXT` (`crypto.randomUUID()`), Datumsfelder `TEXT` im Format `YYYY-MM-DD`, Zeitstempel `INTEGER` (ms).
-Booleans als `INTEGER 0/1`. Fremdschlüssel mit `ON DELETE CASCADE` (Ausnahmen: `notes.course_id` → `SET NULL`, `users.student_id` → `SET NULL`, `courses.teacher_id` → `SET NULL`, `notes.author_id` → `SET NULL`).
+Booleans als `INTEGER 0/1`. Fremdschlüssel mit `ON DELETE CASCADE` (Ausnahmen: `notes.course_id` → `SET NULL`, `users.student_id` → `SET NULL`, `courses.teacher_id` → `SET NULL`, `notes.author_id` → `SET NULL`). `initDb()` migriert bestehende Datenbanken bei Bedarf automatisch auf `SET NULL` für `courses` und `notes`.
 
 | Tabelle | Zweck / Besonderheiten |
 |---|---|
