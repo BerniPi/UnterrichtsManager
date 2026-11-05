@@ -18,12 +18,11 @@ services:
       - PROTOCOL_HEADER=${PROTOCOL_HEADER:-}
       - DATABASE_URL=/app/data/notenmanager.db
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
+    # Data lives in a plain host directory (default: ./data next to this file,
+    # e.g. /opt/notenmanager/data). It must be owned by UID 1000 (user "node"):
+    #   mkdir -p data && sudo chown -R 1000:1000 data
     volumes:
-      - notenmanager_data:/app/data
-
-volumes:
-  notenmanager_data:
-    name: notenmanager_data
+      - ${DATA_DIR:-./data}:/app/data
 
 # Optional: If your Caddy runs in a Docker container in the same network:
 # networks:

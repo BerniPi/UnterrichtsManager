@@ -121,10 +121,33 @@ npm run build
 # .env aus Vorlage erstellen
 cp .env.example .env
 
+# Datenordner anlegen (Container läuft als UID 1000)
+mkdir -p data && sudo chown -R 1000:1000 data
+
 # Container bauen und starten
 docker compose up -d --build
 ```
 Der Container lauscht intern an `127.0.0.1:3000` (kein eigener Port ins öffentliche Internet).
+
+**Wo liegen die Daten?** Alles (Schüler, Noten, Benutzer, Einstellungen, VAPID-Keys) steckt in der SQLite-Datei
+`data/notenmanager.db` neben der `docker-compose.yml`, also z. B. `/opt/notenmanager/data/`. Ein anderer Ordner
+lässt sich über `DATA_DIR` in der `.env` setzen. `data/` ist per `.gitignore` vom Repo ausgeschlossen.
+
+**Host wechseln:** Container stoppen (`docker compose stop`, wegen WAL-Modus), den Ordner `/opt/notenmanager`
+inklusive `.env` und `data/` auf den neuen Host kopieren, dort `sudo chown -R 1000:1000 data` und
+`docker compose up -d --build`.
+
+**Umstieg vom früheren Docker-Volume `notenmanager_data`:** Ältere Versionen speicherten die Daten in einem
+benannten Volume. Vor dem ersten Start mit der neuen `docker-compose.yml` die Daten übernehmen – sonst startet
+die App mit einer leeren Datenbank:
+```bash
+docker compose stop
+mkdir -p data
+docker run --rm -v notenmanager_data:/from -v "$PWD/data":/to alpine \
+  sh -c "cp -a /from/. /to/ && chown -R 1000:1000 /to"
+docker compose up -d --build
+# erst wenn alles passt: docker volume rm notenmanager_data
+```
 
 ### 2. Caddyfile Snippet
 Füge folgenden Block in dein vorhandenes `Caddyfile` auf dem Server ein:

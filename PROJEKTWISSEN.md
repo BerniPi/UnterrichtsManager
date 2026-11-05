@@ -57,6 +57,7 @@ Vitest: `expect.requireAssertions: true` → jeder Test braucht mindestens ein `
 | `ADMIN_PASSWORD` | Passwort für `lehrer` beim **ersten** Seed |
 | `ORIGIN`, `PROTOCOL_HEADER` | hinter Caddy nötig (CSRF/Cookie-Secure) |
 | `HOST_PORT`, `HOST_BIND` | Port-Mapping in docker-compose |
+| `DATA_DIR` | Docker: Host-Ordner für `/app/data` (Bind-Mount, Standard `./data`, Besitzer UID 1000; früher benanntes Volume `notenmanager_data`) |
 | `NODE_ENV=production` | Seed legt dann keine fiktiven Demo-Daten an |
 | `BGBB_API_URL`, `BGBB_API_KEY` | optional: Anbindung BGBB Admin; sind beide gesetzt, gehen sie den Einstellungen vor (`bgbb_api_url`, `bgbb_api_key` in `settings`) |
 
