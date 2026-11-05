@@ -151,7 +151,7 @@ Tab-IDs der Kursseite: `noten`, `hausuebungen`, `tests`, `beobachtungen` (Hauptt
 ## Datenmodell
 
 IDs sind `TEXT` (`crypto.randomUUID()`), Datumsfelder `TEXT` im Format `YYYY-MM-DD`, Zeitstempel `INTEGER` (ms).
-Booleans als `INTEGER 0/1`. Fremdschlüssel mit `ON DELETE CASCADE` (Ausnahmen: `notes.course_id` → `SET NULL`, `users.student_id` → `SET NULL`, `courses.teacher_id` → `SET NULL`, `notes.author_id` → `SET NULL`). `initDb()` migriert bestehende Datenbanken bei Bedarf automatisch auf `SET NULL` für `courses` und `notes`.
+Booleans als `INTEGER 0/1`. Fremdschlüssel mit `ON DELETE CASCADE` (Ausnahmen: `notes.course_id` → `SET NULL`, `users.student_id` → `SET NULL`, `courses.teacher_id` → `SET NULL`, `notes.author_id` → `SET NULL`). `initDb()` baut `courses` und `notes` in bestehenden Datenbanken bei Bedarf neu auf (`migrateOwnerForeignKeys`, SQLite kann FK-Regeln nicht ändern): atomar in einer Transaktion mit `foreign_keys = OFF` und FK-Prüfung; bei einem Fehler wird zurückgerollt und die alte Tabelle bleibt unverändert. Neue Tabellen-Neuaufbauten nach demselben Muster schreiben (nie `BEGIN`/`COMMIT` per `exec` ohne Rollback).
 
 | Tabelle | Zweck / Besonderheiten |
 |---|---|

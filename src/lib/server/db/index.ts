@@ -339,87 +339,8 @@ export function initDb() {
 		sqlite.exec(`ALTER TABLE notes ADD COLUMN author_id TEXT REFERENCES users(id) ON DELETE SET NULL;`);
 	} catch (e) {}
 
-	// Migrate existing courses table if teacher_id is ON DELETE CASCADE
-	try {
-		const coursesFk = sqlite.prepare("PRAGMA foreign_key_list(courses)").all() as Array<{
-			from: string;
-			table: string;
-			on_delete: string;
-		}>;
-		const teacherFk = coursesFk.find((f) => f.from === 'teacher_id' && f.table === 'users');
-		if (teacherFk && teacherFk.on_delete.toUpperCase() === 'CASCADE') {
-			sqlite.pragma('foreign_keys = OFF');
-			sqlite.exec(`
-				BEGIN TRANSACTION;
-				CREATE TABLE courses_new (
-					id TEXT PRIMARY KEY,
-					class_id TEXT NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
-					school_year_id TEXT NOT NULL REFERENCES school_years(id) ON DELETE CASCADE,
-					subject TEXT NOT NULL,
-					weight_schularbeiten REAL NOT NULL DEFAULT 40,
-					weight_tests REAL NOT NULL DEFAULT 20,
-					weight_participation REAL NOT NULL DEFAULT 25,
-					weight_observations REAL NOT NULL DEFAULT 10,
-					weight_homework REAL NOT NULL DEFAULT 5,
-					teacher_id TEXT REFERENCES users(id) ON DELETE SET NULL
-				);
-				INSERT INTO courses_new (
-					id, class_id, school_year_id, subject,
-					weight_schularbeiten, weight_tests, weight_participation,
-					weight_observations, weight_homework, teacher_id
-				)
-				SELECT
-					id, class_id, school_year_id, subject,
-					weight_schularbeiten, weight_tests, weight_participation,
-					weight_observations, weight_homework, teacher_id
-				FROM courses;
-				DROP TABLE courses;
-				ALTER TABLE courses_new RENAME TO courses;
-				CREATE INDEX IF NOT EXISTS idx_courses_teacher ON courses(teacher_id);
-				COMMIT;
-			`);
-			sqlite.pragma('foreign_keys = ON');
-		}
-	} catch (err) {
-		console.error('[DB] Migration courses ON DELETE SET NULL fehlgeschlagen:', err);
-		sqlite.pragma('foreign_keys = ON');
-	}
-
-	// Migrate existing notes table if author_id is ON DELETE CASCADE
-	try {
-		const notesFk = sqlite.prepare("PRAGMA foreign_key_list(notes)").all() as Array<{
-			from: string;
-			table: string;
-			on_delete: string;
-		}>;
-		const authorFk = notesFk.find((f) => f.from === 'author_id' && f.table === 'users');
-		if (authorFk && authorFk.on_delete.toUpperCase() === 'CASCADE') {
-			sqlite.pragma('foreign_keys = OFF');
-			sqlite.exec(`
-				BEGIN TRANSACTION;
-				CREATE TABLE notes_new (
-					id TEXT PRIMARY KEY,
-					student_id TEXT NOT NULL REFERENCES students(id) ON DELETE CASCADE,
-					course_id TEXT REFERENCES courses(id) ON DELETE SET NULL,
-					date TEXT NOT NULL,
-					category TEXT NOT NULL,
-					title TEXT NOT NULL,
-					content TEXT NOT NULL,
-					author_id TEXT REFERENCES users(id) ON DELETE SET NULL
-				);
-				INSERT INTO notes_new (id, student_id, course_id, date, category, title, content, author_id)
-				SELECT id, student_id, course_id, date, category, title, content, author_id FROM notes;
-				DROP TABLE notes;
-				ALTER TABLE notes_new RENAME TO notes;
-				CREATE INDEX IF NOT EXISTS idx_notes_author ON notes(author_id);
-				COMMIT;
-			`);
-			sqlite.pragma('foreign_keys = ON');
-		}
-	} catch (err) {
-		console.error('[DB] Migration notes ON DELETE SET NULL fehlgeschlagen:', err);
-		sqlite.pragma('foreign_keys = ON');
-	}
+	// Existing DBs: courses.teacher_id / notes.author_id were created with ON DELETE CASCADE
+	migrateOwnerForeignKeys(sqlite);
 
 	try {
 		sqlite.exec(`ALTER TABLE push_subscriptions ADD COLUMN user_id TEXT REFERENCES users(id) ON DELETE CASCADE;`);
@@ -457,6 +378,110 @@ export function initDb() {
 
 	// One-time migration for existing multi-user ownership
 	assignUnownedDataToAdmin();
+}
+
+type SqliteConnection = InstanceType<typeof Database>;
+
+/**
+ * Rebuilds `table` (SQLite cannot change an FK action in place) when `column -> users`
+ * is still ON DELETE CASCADE. Runs atomically: on any error the transaction is rolled back,
+ * the old table stays untouched and the connection is left without an open transaction.
+ */
+function rebuildOwnerFkTable(
+	conn: SqliteConnection,
+	table: 'courses' | 'notes',
+	column: string,
+	rebuildSql: string
+): void {
+	const fks = conn.prepare(`PRAGMA foreign_key_list(${table})`).all() as Array<{
+		from: string;
+		table: string;
+		on_delete: string;
+	}>;
+	const fk = fks.find((f) => f.from === column && f.table === 'users');
+	if (!fk || fk.on_delete.toUpperCase() !== 'CASCADE') return;
+
+	if (conn.inTransaction) {
+		console.error(`[DB] Migration ${table} übersprungen: offene Transaktion`);
+		return;
+	}
+
+	// Must be switched outside of a transaction, otherwise DROP TABLE would cascade.
+	conn.pragma('foreign_keys = OFF');
+	try {
+		conn.transaction(() => {
+			conn.exec(rebuildSql);
+			const violations = conn.prepare(`PRAGMA foreign_key_check(${table})`).all();
+			if (violations.length > 0) {
+				throw new Error(`${violations.length} Fremdschlüssel-Verletzung(en) in ${table}`);
+			}
+		})();
+	} catch (err) {
+		console.error(`[DB] Migration ${table} ON DELETE SET NULL fehlgeschlagen (zurückgerollt):`, err);
+		if (conn.inTransaction) conn.exec('ROLLBACK');
+	} finally {
+		conn.pragma('foreign_keys = ON');
+	}
+}
+
+export function migrateOwnerForeignKeys(conn: SqliteConnection): void {
+	rebuildOwnerFkTable(
+		conn,
+		'courses',
+		'teacher_id',
+		`
+		CREATE TABLE courses_new (
+			id TEXT PRIMARY KEY,
+			class_id TEXT NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+			school_year_id TEXT NOT NULL REFERENCES school_years(id) ON DELETE CASCADE,
+			subject TEXT NOT NULL,
+			weight_schularbeiten REAL NOT NULL DEFAULT 40,
+			weight_tests REAL NOT NULL DEFAULT 20,
+			weight_participation REAL NOT NULL DEFAULT 25,
+			weight_observations REAL NOT NULL DEFAULT 10,
+			weight_homework REAL NOT NULL DEFAULT 5,
+			teacher_id TEXT REFERENCES users(id) ON DELETE SET NULL
+		);
+		INSERT INTO courses_new (
+			id, class_id, school_year_id, subject,
+			weight_schularbeiten, weight_tests, weight_participation,
+			weight_observations, weight_homework, teacher_id
+		)
+		SELECT
+			id, class_id, school_year_id, subject,
+			weight_schularbeiten, weight_tests, weight_participation,
+			weight_observations, weight_homework, teacher_id
+		FROM courses;
+		DROP TABLE courses;
+		ALTER TABLE courses_new RENAME TO courses;
+		CREATE INDEX IF NOT EXISTS idx_courses_class ON courses(class_id);
+		CREATE INDEX IF NOT EXISTS idx_courses_school_year ON courses(school_year_id);
+		CREATE INDEX IF NOT EXISTS idx_courses_teacher ON courses(teacher_id);
+	`
+	);
+
+	rebuildOwnerFkTable(
+		conn,
+		'notes',
+		'author_id',
+		`
+		CREATE TABLE notes_new (
+			id TEXT PRIMARY KEY,
+			student_id TEXT NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+			course_id TEXT REFERENCES courses(id) ON DELETE SET NULL,
+			date TEXT NOT NULL,
+			category TEXT NOT NULL,
+			title TEXT NOT NULL,
+			content TEXT NOT NULL,
+			author_id TEXT REFERENCES users(id) ON DELETE SET NULL
+		);
+		INSERT INTO notes_new (id, student_id, course_id, date, category, title, content, author_id)
+		SELECT id, student_id, course_id, date, category, title, content, author_id FROM notes;
+		DROP TABLE notes;
+		ALTER TABLE notes_new RENAME TO notes;
+		CREATE INDEX IF NOT EXISTS idx_notes_author ON notes(author_id);
+	`
+	);
 }
 
 export function assignUnownedDataToAdmin(): void {
